@@ -44,6 +44,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             uid: config.audioInputDeviceUID,
             legacyID: config.audioInputDeviceID
         )
+        recorder.duckOtherAudio = config.duckOtherAudioEnabled
         if Config.effectiveMaxRecordings(config.maxRecordings) == 0 {
             RecordingStore.deleteAllRecordings()
         }
@@ -64,12 +65,6 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        if Permissions.didUpgrade() {
-            print("Accessibility: upgrade detected, resetting permissions...")
-            Permissions.resetAccessibility()
-            Thread.sleep(forTimeInterval: 1)
-        }
-
         if !AXIsProcessTrusted() {
             DispatchQueue.main.async {
                 self.statusBar.state = .waitingForPermission
@@ -77,7 +72,18 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        Permissions.ensureMicrophone()
+        if !Permissions.ensureMicrophone() {
+            DispatchQueue.main.async {
+                self.statusBar.state = .waitingForMicrophonePermission
+                self.statusBar.buildMenu()
+            }
+            Permissions.openMicrophoneSettings()
+            print("Waiting for Microphone permission...")
+            while !Permissions.hasMicrophoneAccess {
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+            print("Microphone: granted")
+        }
 
         if !AXIsProcessTrusted() {
             print("Accessibility: not granted")
@@ -184,6 +190,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         )
         config = newConfig
         recorder.preferredDeviceID = newDeviceID
+        recorder.duckOtherAudio = newConfig.duckOtherAudioEnabled
         recorder.prepare()
         transcriber = makeTranscriber(for: config)
         inserter = TextInserter()
@@ -283,11 +290,13 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             }
             try recorder.startRecording(to: outputURL)
             currentRecordingURL = outputURL
+            statusBar.buildMenu()
         } catch {
             print("Error: \(error.localizedDescription)")
             recordingLifecycle.recordingStartFailed()
             currentRecordingURL = nil
             statusBar.state = .idle
+            statusBar.buildMenu()
         }
     }
 
@@ -295,11 +304,13 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         guard let audioURL = recorder.stopRecording() else {
             RecordingCancellation.discardTrackedPartialRecording(&currentRecordingURL)
             statusBar.state = .idle
+            statusBar.buildMenu()
             return
         }
 
         currentRecordingURL = nil
         statusBar.state = .transcribing
+        statusBar.buildMenu()
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }

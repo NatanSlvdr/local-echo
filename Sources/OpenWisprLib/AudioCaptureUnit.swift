@@ -130,6 +130,9 @@ final class AudioCaptureUnit {
         renderState.framesWritten = 0
         renderState.firstBufferAt = 0
         renderState.captureError = noErr
+        renderState.peakLevel = 0
+        renderState.sumSquares = 0
+        renderState.samplesMeasured = 0
         do {
             var format = Self.fileFormat
             try Self.check(ExtAudioFileCreateWithURL(url as CFURL, kAudioFileWAVEType, &format, nil,
@@ -158,7 +161,13 @@ final class AudioCaptureUnit {
                 NSLocalizedDescriptionKey: "The microphone did not deliver audio. Check the selected input device.",
             ])
         }
-        print("Audio first buffer: \((renderState.firstBufferAt - renderState.requestedAt) / 1_000_000) ms; recorded \(renderState.framesWritten) frames")
+        guard renderState.peakLevel > 0 else {
+            throw NSError(domain: "OpenWispr.AudioRecorder", code: 4, userInfo: [
+                NSLocalizedDescriptionKey: "The microphone delivered only silence. Check Microphone permission and the selected input device.",
+            ])
+        }
+        let rms = sqrt(renderState.sumSquares / Double(max(renderState.samplesMeasured, 1)))
+        print("Audio first buffer: \((renderState.firstBufferAt - renderState.requestedAt) / 1_000_000) ms; recorded \(renderState.framesWritten) frames; peak=\(renderState.peakLevel), rms=\(rms)")
     }
 
     private func observeDeviceChanges(route: AudioEngineCacheState.Route) throws {
@@ -239,6 +248,9 @@ private final class AudioCaptureRenderState {
     var captureError: OSStatus = noErr
     var firstBufferAt: UInt64 = 0
     var requestedAt: UInt64 = 0
+    var peakLevel: Double = 0
+    var sumSquares: Double = 0
+    var samplesMeasured: UInt64 = 0
 
     func receive(_ flags: UnsafeMutablePointer<AudioUnitRenderActionFlags>, _ timestamp: UnsafePointer<AudioTimeStamp>,
                          _ frames: UInt32) -> OSStatus {
@@ -249,6 +261,14 @@ private final class AudioCaptureRenderState {
         buffer.frameLength = frames
         let status = AudioUnitRender(unit, flags, timestamp, 1, frames, buffer.mutableAudioBufferList)
         guard status == noErr else { captureError = status; return status }
+        if let samples = buffer.floatChannelData?.pointee {
+            for index in 0..<Int(frames) {
+                let value = Double(samples[index])
+                peakLevel = max(peakLevel, abs(value))
+                sumSquares += value * value
+            }
+            samplesMeasured += UInt64(frames)
+        }
         guard let file else { return noErr }
         let writeStatus = ExtAudioFileWriteAsync(file, frames, buffer.audioBufferList)
         guard writeStatus == noErr else { captureError = writeStatus; return writeStatus }

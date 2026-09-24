@@ -12,7 +12,7 @@ echo "--------------------------------------------"
 
 # Prefer the packaged executable when an app bundle has been built.
 WHISPER_BIN=""
-APP_DIR="${OPEN_WISPR_DEV_APP_DIR:-/tmp/OpenWispr.app}"
+APP_DIR="${OPEN_WISPR_DEV_APP_DIR:-$HOME/Library/Application Support/OpenWispr/dev/OpenWispr.app}"
 if [ -x "$APP_DIR/Contents/MacOS/whisper-cli" ]; then
     WHISPER_BIN="$APP_DIR/Contents/MacOS/whisper-cli"
 elif [ -x ".build/whisper-cli" ]; then

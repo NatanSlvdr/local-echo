@@ -21,13 +21,15 @@ From a checkout of this repository, run:
 bash scripts/dev.sh
 ```
 
-This builds a signed `/tmp/OpenWispr.app` containing `whisper-cli` and starts it in the foreground. Keep the terminal open while using it; press Ctrl-C to stop it. The finished app runs without a separate `whisper-cli` installation. The Swift build script calls `swiftc` directly, so it also works with Command Line Tools installations where Swift Package Manager cannot load manifests.
+This builds a signed app at `~/Library/Application Support/OpenWispr/dev/OpenWispr.app` containing `whisper-cli` and launches it through macOS. The script waits until you choose **Quit** from the menu bar. Logs are written to `~/.config/open-wispr/dev.log`. The finished app runs without a separate `whisper-cli` installation. The Swift build script calls `swiftc` directly, so it also works with Command Line Tools installations where Swift Package Manager cannot load manifests.
+
+When an Apple Development signing identity is available, the dev script uses it so macOS can keep the app's microphone permission across rebuilds. Otherwise the app is signed locally and macOS may ask for permission again after a rebuild.
 
 A waveform icon appears in your menu bar when it's running.
 
 The default hotkey is the **Globe key** (🌐, bottom-left). Hold it, speak, release.
 
-On macOS 14 and later, OpenWispr uses native voice processing to reduce playback volume during recording. Playback returns to normal when recording stops.
+On macOS 14 and later, OpenWispr can reduce other apps' playback volume while recording. Use **Lower Other Audio While Recording** in the menu bar to turn this on or off. Microphone capture always uses the standard audio engine; the optional ducking component is active only during recording.
 
 > **[Setup and permissions guide](docs/install-guide.md)** — permission walkthrough, non-English macOS instructions, and troubleshooting.
 
@@ -43,7 +45,8 @@ Edit `~/.config/open-wispr/config.json`:
   "spokenPunctuation": false,
   "whisperPrompt": "Use punctuation and capitalization.",
   "maxRecordings": 0,
-  "toggleMode": false
+  "toggleMode": false,
+  "duckOtherAudioDuringRecording": false
 }
 ```
 
@@ -73,6 +76,7 @@ Both `hotkey` (single) and `hotkeys` (array) are supported. If both are present,
 | **whisperPrompt** | — | Optional prompt text passed to Whisper to guide style, vocabulary, or punctuation. Omit it or leave it blank to use Whisper's default behavior. |
 | **maxRecordings** | `0` | Optionally store past recordings locally as `.wav` files for re-transcribing from the tray menu. `0` = nothing stored (default). Set 1-100 to keep that many recent recordings. |
 | **toggleMode** | `false` | Press hotkey once to start recording, press again to stop. Default is hold-to-talk. |
+| **duckOtherAudioDuringRecording** | `false` | On macOS 14+, lower other apps' audio only while recording. Can also be changed from the menu bar. |
 
 ### Models
 
@@ -133,8 +137,10 @@ git clone https://github.com/NatanSlvdr/local-echo.git
 cd local-echo
 bash scripts/build-whisper.sh
 bash scripts/build-swift.sh
-bash scripts/bundle-app.sh .build/release/open-wispr /tmp/OpenWispr.app dev
-/tmp/OpenWispr.app/Contents/MacOS/open-wispr start
+APP_DIR="$HOME/Library/Application Support/OpenWispr/dev/OpenWispr.app"
+bash scripts/bundle-app.sh .build/release/open-wispr "$APP_DIR" dev
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DIR"
+open -a "$APP_DIR" --args start
 ```
 
 `bundle-app.sh` copies the static `whisper-cli` into the app and rejects executables linked to third-party libraries. The selected speech model downloads on first launch to `~/.config/open-wispr/models/`.

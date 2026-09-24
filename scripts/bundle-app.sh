@@ -4,6 +4,13 @@ set -euo pipefail
 BINARY="${1:-.build/release/open-wispr}"
 APP_DIR="${2:-OpenWispr.app}"
 VERSION="${3:-0.3.0}"
+if [ "$VERSION" = "dev" ]; then
+    VERSION="$(sed -n 's/.*let version = "\([^"]*\)".*/\1/p' "$(dirname "$0")/../Sources/OpenWisprLib/Version.swift")"
+fi
+if [[ ! "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
+    echo "Invalid app version: $VERSION (expected a numeric version such as 0.46.0)" >&2
+    exit 1
+fi
 WHISPER_BINARY="${4:-.build/whisper-cli}"
 if [ ! -x "$WHISPER_BINARY" ] && [ "$#" -lt 4 ]; then
     WHISPER_BINARY="$(command -v whisper-cli || true)"
@@ -66,7 +73,8 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
 </plist>
 PLIST
 
-codesign --force --sign - "$APP_DIR/Contents/MacOS/whisper-cli"
-codesign --force --sign - --identifier com.human37.open-wispr "$APP_DIR"
+SIGN_IDENTITY="${OPEN_WISPR_CODESIGN_IDENTITY:--}"
+codesign --force --sign "$SIGN_IDENTITY" "$APP_DIR/Contents/MacOS/whisper-cli"
+codesign --force --sign "$SIGN_IDENTITY" --identifier com.human37.open-wispr "$APP_DIR"
 
 echo "Built $APP_DIR"
