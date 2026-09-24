@@ -12,7 +12,7 @@ From a checkout of this repository:
 bash scripts/dev.sh
 ```
 
-The script builds and signs `/tmp/OpenWispr.app`, then starts it in the foreground. Keep the terminal open while using the app. Press Ctrl-C to stop it. On first run, OpenWispr downloads its default speech model to `~/.config/open-wispr/models/`.
+The script builds and signs `/tmp/OpenWispr.app`, then opens it through macOS Launch Services. Quit OpenWispr from its menu bar icon when finished. On first run, OpenWispr downloads its default speech model to `~/.config/open-wispr/models/`.
 
 To inspect the configuration or change it, use the built CLI:
 

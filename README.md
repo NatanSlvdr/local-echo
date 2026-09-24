@@ -21,7 +21,7 @@ From a checkout of this repository, run:
 bash scripts/dev.sh
 ```
 
-This builds a signed `/tmp/OpenWispr.app` containing `whisper-cli` and starts it in the foreground. Keep the terminal open while using it; press Ctrl-C to stop it. The finished app runs without a separate `whisper-cli` installation. The Swift build script calls `swiftc` directly, so it also works with Command Line Tools installations where Swift Package Manager cannot load manifests.
+This builds a signed `/tmp/OpenWispr.app` containing `whisper-cli` and opens it through macOS Launch Services. Quit OpenWispr from its menu bar icon when finished. The app runs without a separate `whisper-cli` installation. The Swift build script calls `swiftc` directly, so it also works with Command Line Tools installations where Swift Package Manager cannot load manifests.
 
 A waveform icon appears in your menu bar when it's running.
 
@@ -47,7 +47,7 @@ Edit `~/.config/open-wispr/config.json`:
 }
 ```
 
-Restart the app after editing the file: press Ctrl-C in its terminal, then run `bash scripts/dev.sh` again.
+Restart the app after editing the file: quit OpenWispr from its menu bar icon, then run `bash scripts/dev.sh` again.
 
 To bind multiple hotkeys, use the `hotkeys` array instead:
 
@@ -134,7 +134,7 @@ cd local-echo
 bash scripts/build-whisper.sh
 bash scripts/build-swift.sh
 bash scripts/bundle-app.sh .build/release/open-wispr /tmp/OpenWispr.app dev
-/tmp/OpenWispr.app/Contents/MacOS/open-wispr start
+open -n /tmp/OpenWispr.app --args start
 ```
 
 `bundle-app.sh` copies the static `whisper-cli` into the app and rejects executables linked to third-party libraries. The selected speech model downloads on first launch to `~/.config/open-wispr/models/`.
