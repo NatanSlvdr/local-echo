@@ -12,8 +12,9 @@ echo "--------------------------------------------"
 
 # Prefer the packaged executable when an app bundle has been built.
 WHISPER_BIN=""
-if [ -x "OpenWispr.app/Contents/MacOS/whisper-cli" ]; then
-    WHISPER_BIN="OpenWispr.app/Contents/MacOS/whisper-cli"
+APP_DIR="${OPEN_WISPR_DEV_APP_DIR:-/tmp/OpenWispr.app}"
+if [ -x "$APP_DIR/Contents/MacOS/whisper-cli" ]; then
+    WHISPER_BIN="$APP_DIR/Contents/MacOS/whisper-cli"
 elif [ -x ".build/whisper-cli" ]; then
     WHISPER_BIN=".build/whisper-cli"
 elif command -v whisper-cli &>/dev/null; then
@@ -85,8 +86,11 @@ else
     fail "Expected number words in output, got: $OUTPUT"
 fi
 
-# Test 3: Transcriber class via the built binary
-BIN=".build/release/open-wispr"
+# Test 3: Transcriber class via the bundled app
+BIN="$APP_DIR/Contents/MacOS/open-wispr"
+if [ ! -x "$BIN" ]; then
+    BIN=".build/release/open-wispr"
+fi
 if [ -x "$BIN" ]; then
     if $BIN status 2>&1 | grep -q "Whisper CLI: yes"; then
         pass "Binary detects whisper-cli"

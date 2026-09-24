@@ -6,7 +6,7 @@ OpenWispr is a macOS Swift app. Install the Xcode Command Line Tools and CMake, 
 bash scripts/dev.sh
 ```
 
-The script builds `whisper-cli` from source, builds and signs `OpenWispr.app` with it, then starts the app in the foreground. See the [setup guide](docs/install-guide.md) for permissions and troubleshooting.
+The script builds `whisper-cli` from source, builds and signs `/tmp/OpenWispr.app` with it, then starts the app in the foreground. See the [setup guide](docs/install-guide.md) for permissions and troubleshooting.
 
 ## Project structure
 

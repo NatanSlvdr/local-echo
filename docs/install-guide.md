@@ -12,7 +12,7 @@ From a checkout of this repository:
 bash scripts/dev.sh
 ```
 
-The script builds and signs `OpenWispr.app` in the checkout, then starts it in the foreground. Keep the terminal open while using the app. Press Ctrl-C to stop it. On first run, OpenWispr downloads its default speech model to `~/.config/open-wispr/models/`.
+The script builds and signs `/tmp/OpenWispr.app`, then starts it in the foreground. Keep the terminal open while using the app. Press Ctrl-C to stop it. On first run, OpenWispr downloads its default speech model to `~/.config/open-wispr/models/`.
 
 To inspect the configuration or change it, use the built CLI:
 
@@ -28,7 +28,7 @@ Restart the app after changing settings.
 
 OpenWispr needs Microphone access to record speech and Accessibility access to detect the hotkey and insert text. macOS prompts for these permissions when the app starts. Grant both to **OpenWispr**.
 
-If you missed the Accessibility prompt, open **System Settings → Privacy & Security → Accessibility** and enable OpenWispr. If it is not listed, add `OpenWispr.app` from the repository checkout. For Microphone access, use **System Settings → Privacy & Security → Microphone**.
+If you missed the Accessibility prompt, open **System Settings → Privacy & Security → Accessibility** and enable OpenWispr. If it is not listed, add `/tmp/OpenWispr.app`. For Microphone access, use **System Settings → Privacy & Security → Microphone**.
 
 On non-English macOS installations, the Settings names are translated; the app name **OpenWispr** stays the same.
 
@@ -44,11 +44,11 @@ On non-English macOS installations, the Settings names are translated; the app n
 
 ### `whisper-cli` is not found
 
-Run `bash scripts/build-whisper.sh`, then rebuild the app with `bash scripts/dev.sh`. Check that `OpenWispr.app/Contents/MacOS/whisper-cli` exists.
+Run `bash scripts/build-whisper.sh`, then rebuild the app with `bash scripts/dev.sh`. Check that `/tmp/OpenWispr.app/Contents/MacOS/whisper-cli` exists.
 
 ### OpenWispr waits for Accessibility permission
 
-Enable OpenWispr in **System Settings → Privacy & Security → Accessibility**. If it is missing, add the `OpenWispr.app` created in the checkout and restart the app.
+Enable OpenWispr in **System Settings → Privacy & Security → Accessibility**. If it is missing, add `/tmp/OpenWispr.app` and restart the app.
 
 ### Microphone access was denied
 

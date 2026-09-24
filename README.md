@@ -21,7 +21,7 @@ From a checkout of this repository, run:
 bash scripts/dev.sh
 ```
 
-This builds a signed `OpenWispr.app` containing `whisper-cli` and starts it in the foreground. Keep the terminal open while using it; press Ctrl-C to stop it. The finished app runs without a separate `whisper-cli` installation.
+This builds a signed `/tmp/OpenWispr.app` containing `whisper-cli` and starts it in the foreground. Keep the terminal open while using it; press Ctrl-C to stop it. The finished app runs without a separate `whisper-cli` installation. The Swift build script calls `swiftc` directly, so it also works with Command Line Tools installations where Swift Package Manager cannot load manifests.
 
 A waveform icon appears in your menu bar when it's running.
 
@@ -132,9 +132,9 @@ See what's planned and in progress on the [public roadmap](https://github.com/us
 git clone https://github.com/NatanSlvdr/local-echo.git
 cd local-echo
 bash scripts/build-whisper.sh
-swift build -c release
-bash scripts/bundle-app.sh .build/release/open-wispr OpenWispr.app dev
-OpenWispr.app/Contents/MacOS/open-wispr start
+bash scripts/build-swift.sh
+bash scripts/bundle-app.sh .build/release/open-wispr /tmp/OpenWispr.app dev
+/tmp/OpenWispr.app/Contents/MacOS/open-wispr start
 ```
 
 `bundle-app.sh` copies the static `whisper-cli` into the app and rejects executables linked to third-party libraries. The selected speech model downloads on first launch to `~/.config/open-wispr/models/`.
