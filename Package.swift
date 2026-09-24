@@ -1,13 +1,13 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
-    name: "open-wispr",
+    name: "local-echo",
     platforms: [.macOS(.v13)],
     targets: [
         .target(
-            name: "OpenWisprLib",
-            path: "Sources/OpenWisprLib",
+            name: "LocalEchoLib",
+            path: "Sources/LocalEchoLib",
             linkerSettings: [
                 .linkedFramework("CoreAudio"),
                 .linkedFramework("AVFoundation"),
@@ -15,14 +15,14 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "open-wispr",
-            dependencies: ["OpenWisprLib"],
-            path: "Sources/OpenWispr"
+            name: "local-echo",
+            dependencies: ["LocalEchoLib"],
+            path: "Sources/LocalEcho"
         ),
         .testTarget(
-            name: "OpenWisprTests",
-            dependencies: ["OpenWisprLib"],
-            path: "Tests/OpenWisprTests"
+            name: "LocalEchoTests",
+            dependencies: ["LocalEchoLib"],
+            path: "Tests/LocalEchoTests"
         ),
     ]
 )

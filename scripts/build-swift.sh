@@ -16,18 +16,18 @@ trap 'rm -rf "$BUILD_DIR"' EXIT
 
 (
     cd "$BUILD_DIR"
-    swiftc "${SWIFT_FLAGS[@]}" -swift-version 5 -target "$TARGET" \
+    swiftc "${SWIFT_FLAGS[@]}" -swift-version 6 -target "$TARGET" \
         -emit-module -emit-object -parse-as-library \
-        -module-name OpenWisprLib \
-        -emit-module-path "$BUILD_DIR/OpenWisprLib.swiftmodule" \
-        "$REPO_DIR"/Sources/OpenWisprLib/*.swift \
+        -module-name LocalEchoLib \
+        -emit-module-path "$BUILD_DIR/LocalEchoLib.swiftmodule" \
+        "$REPO_DIR"/Sources/LocalEchoLib/*.swift \
         -framework AppKit -framework AVFoundation -framework CoreAudio
 )
 
-swiftc "${SWIFT_FLAGS[@]}" -swift-version 5 -target "$TARGET" \
+swiftc "${SWIFT_FLAGS[@]}" -swift-version 6 -target "$TARGET" \
     -I "$BUILD_DIR" \
-    "$REPO_DIR"/Sources/OpenWispr/*.swift "$BUILD_DIR"/*.o \
+    "$REPO_DIR"/Sources/LocalEcho/*.swift "$BUILD_DIR"/*.o \
     -framework AppKit -framework AVFoundation -framework CoreAudio \
-    -o "$REPO_DIR/.build/$MODE/open-wispr"
+    -o "$REPO_DIR/.build/$MODE/local-echo"
 
-echo "Built $REPO_DIR/.build/$MODE/open-wispr"
+echo "Built $REPO_DIR/.build/$MODE/local-echo"

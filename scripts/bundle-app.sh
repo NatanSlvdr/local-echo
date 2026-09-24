@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-BINARY="${1:-.build/release/open-wispr}"
-APP_DIR="${2:-OpenWispr.app}"
+BINARY="${1:-.build/release/local-echo}"
+APP_DIR="${2:-Local-Echo.app}"
 VERSION="${3:-0.3.0}"
 if [ "$VERSION" = "dev" ]; then
-    VERSION="$(sed -n 's/.*let version = "\([^"]*\)".*/\1/p' "$(dirname "$0")/../Sources/OpenWisprLib/Version.swift")"
+    VERSION="$(sed -n 's/.*let version = "\([^"]*\)".*/\1/p' "$(dirname "$0")/../Sources/LocalEchoLib/Version.swift")"
 fi
 if [[ ! "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
     echo "Invalid app version: $VERSION (expected a numeric version such as 0.46.0)" >&2
@@ -33,7 +33,7 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
-cp "$BINARY" "$APP_DIR/Contents/MacOS/open-wispr"
+cp "$BINARY" "$APP_DIR/Contents/MacOS/local-echo"
 cp "$WHISPER_BINARY" "$APP_DIR/Contents/MacOS/whisper-cli"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -48,13 +48,13 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>open-wispr</string>
+    <string>local-echo</string>
     <key>CFBundleIdentifier</key>
-    <string>com.human37.open-wispr</string>
+    <string>com.natanslvdr.local-echo</string>
     <key>CFBundleName</key>
-    <string>OpenWispr</string>
+    <string>Local-Echo</string>
     <key>CFBundleDisplayName</key>
-    <string>OpenWispr</string>
+    <string>Local-Echo</string>
     <key>CFBundleVersion</key>
     <string>${VERSION}</string>
     <key>CFBundleShortVersionString</key>
@@ -68,15 +68,15 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>OpenWispr needs microphone access to record speech for transcription.</string>
+    <string>Local-Echo needs microphone access to record speech for transcription.</string>
 </dict>
 </plist>
 PLIST
 
 codesign --remove-signature "$APP_DIR/Contents/MacOS/whisper-cli"
-codesign --remove-signature "$APP_DIR/Contents/MacOS/open-wispr"
-SIGN_IDENTITY="${OPEN_WISPR_CODESIGN_IDENTITY:--}"
+codesign --remove-signature "$APP_DIR/Contents/MacOS/local-echo"
+SIGN_IDENTITY="${LOCAL_ECHO_CODESIGN_IDENTITY:--}"
 codesign --sign "$SIGN_IDENTITY" "$APP_DIR/Contents/MacOS/whisper-cli"
-codesign --sign "$SIGN_IDENTITY" --identifier com.human37.open-wispr "$APP_DIR"
+codesign --sign "$SIGN_IDENTITY" --identifier com.natanslvdr.local-echo "$APP_DIR"
 
 echo "Built $APP_DIR"

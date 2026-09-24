@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-OpenWispr runs on macOS 13 or later. Install the Xcode Command Line Tools with `xcode-select --install`, and install CMake. The development script builds and bundles `whisper-cli` from source.
+Local-Echo runs on macOS 13 or later. Install the Xcode Command Line Tools with `xcode-select --install`, and install CMake. The development script builds and bundles `whisper-cli` from source.
 
 ## Build and run
 
@@ -12,25 +12,27 @@ From a checkout of this repository:
 bash scripts/dev.sh
 ```
 
-The script builds and signs `~/Library/Application Support/OpenWispr/dev/OpenWispr.app`, then starts it through macOS. The app keeps running after the command returns; choose **Quit** from the menu bar to stop it before rebuilding. Logs are written to `~/.config/open-wispr/dev.log`. On first run, OpenWispr downloads its default speech model to `~/.config/open-wispr/models/`.
+The script builds and signs `~/Library/Application Support/Local-Echo/dev/Local-Echo.app`, then starts it through macOS. The app keeps running after the command returns; choose **Quit** from the menu bar to stop it before rebuilding. Logs are written to `~/.config/local-echo/dev.log`. On first run, Local-Echo downloads its default speech model to `~/.config/local-echo/models/`.
+
+Existing settings from `~/.config/open-wispr/config.json` are copied to the new configuration path on first launch. Previously downloaded models and saved recordings remain available from the old data directory. Because the app bundle identifier changed, macOS may ask you to grant Microphone and Accessibility access again.
 
 To inspect the configuration or change it, use the built CLI:
 
 ```bash
-.build/debug/open-wispr status
-.build/debug/open-wispr set-hotkey f5
-.build/debug/open-wispr set-model small.en
+.build/debug/local-echo status
+.build/debug/local-echo set-hotkey f5
+.build/debug/local-echo set-model medium
 ```
 
 Restart the app after changing settings.
 
 ## Granting permissions
 
-OpenWispr needs Microphone access to record speech and Accessibility access to detect the hotkey and insert text. macOS prompts for these permissions when the app starts. Grant both to **OpenWispr**.
+Local-Echo needs Microphone access to record speech and Accessibility access to detect the hotkey and insert text. macOS prompts for these permissions when the app starts. Grant both to **Local-Echo**.
 
-If you missed the Accessibility prompt, open **System Settings → Privacy & Security → Accessibility** and enable OpenWispr. If it is not listed, add `~/Library/Application Support/OpenWispr/dev/OpenWispr.app`. For Microphone access, use **System Settings → Privacy & Security → Microphone**.
+If you missed the Accessibility prompt, open **System Settings → Privacy & Security → Accessibility** and enable Local-Echo. If it is not listed, add `~/Library/Application Support/Local-Echo/dev/Local-Echo.app`. For Microphone access, use **System Settings → Privacy & Security → Microphone**.
 
-On non-English macOS installations, the Settings names are translated; the app name **OpenWispr** stays the same.
+On non-English macOS installations, the Settings names are translated; the app name **Local-Echo** stays the same.
 
 | Language | Accessibility settings path |
 |---|---|
@@ -44,17 +46,17 @@ On non-English macOS installations, the Settings names are translated; the app n
 
 ### `whisper-cli` is not found
 
-Run `bash scripts/build-whisper.sh`, then rebuild the app with `bash scripts/dev.sh`. Check that `~/Library/Application Support/OpenWispr/dev/OpenWispr.app/Contents/MacOS/whisper-cli` exists.
+Run `bash scripts/build-whisper.sh`, then rebuild the app with `bash scripts/dev.sh`. Check that `~/Library/Application Support/Local-Echo/dev/Local-Echo.app/Contents/MacOS/whisper-cli` exists.
 
-### OpenWispr waits for Accessibility permission
+### Local-Echo waits for Accessibility permission
 
-Enable OpenWispr in **System Settings → Privacy & Security → Accessibility**. If it is missing, add `~/Library/Application Support/OpenWispr/dev/OpenWispr.app` and restart the app.
+Enable Local-Echo in **System Settings → Privacy & Security → Accessibility**. If it is missing, add `~/Library/Application Support/Local-Echo/dev/Local-Echo.app` and restart the app.
 
 ### Microphone access was denied
 
-Enable OpenWispr in **System Settings → Privacy & Security → Microphone**, then restart the app.
+Enable Local-Echo in **System Settings → Privacy & Security → Microphone**, then restart the app.
 
-If OpenWispr is absent from the Microphone list, launch the signed app with `bash scripts/dev.sh` and check `~/.config/open-wispr/dev.log` for `Microphone: requesting...` followed by `Microphone: granted`. Launching the executable directly from Terminal can make macOS attribute the request to Terminal instead of OpenWispr.
+If Local-Echo is absent from the Microphone list, launch the signed app with `bash scripts/dev.sh` and check `~/.config/local-echo/dev.log` for `Microphone: requesting...` followed by `Microphone: granted`. Launching the executable directly from Terminal can make macOS attribute the request to Terminal instead of Local-Echo.
 
 ### Globe key opens the emoji picker
 
@@ -62,17 +64,8 @@ Set **System Settings → Keyboard → “Press 🌐 key to” → “Do Nothing
 
 ### Configuration resets to defaults
 
-If `~/.config/open-wispr/config.json` contains invalid JSON or unsupported values, OpenWispr warns and uses defaults for that run. Fix the file, then restart the app.
+If `~/.config/local-echo/config.json` contains invalid JSON or unsupported values, Local-Echo warns and uses defaults for that run. Fix the file, then restart the app.
 
 ## Language support
 
-OpenWispr defaults to English. To use another language, set a multilingual model and language code in `~/.config/open-wispr/config.json`:
-
-```json
-{
-  "language": "it",
-  "modelSize": "base"
-}
-```
-
-The model downloads automatically on the next run. See [MODELS.md](../MODELS.md) for model choices.
+Local-Echo detects the spoken language automatically with any of its three multilingual models. Choose `large-v3-turbo` (default), `medium`, or `large-v3` in the menu bar or with `local-echo set-model <size>`. The model downloads automatically on the next run. See [MODELS.md](../MODELS.md) for model choices.

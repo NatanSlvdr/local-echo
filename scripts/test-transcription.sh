@@ -7,12 +7,12 @@ FAIL=0
 pass() { PASS=$((PASS + 1)); echo "  PASS: $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }
 
-echo "open-wispr transcription integration tests"
+echo "Local-Echo transcription integration tests"
 echo "--------------------------------------------"
 
 # Prefer the packaged executable when an app bundle has been built.
 WHISPER_BIN=""
-APP_DIR="${OPEN_WISPR_DEV_APP_DIR:-$HOME/Library/Application Support/OpenWispr/dev/OpenWispr.app}"
+APP_DIR="${LOCAL_ECHO_DEV_APP_DIR:-$HOME/Library/Application Support/Local-Echo/dev/Local-Echo.app}"
 if [ -x "$APP_DIR/Contents/MacOS/whisper-cli" ]; then
     WHISPER_BIN="$APP_DIR/Contents/MacOS/whisper-cli"
 elif [ -x ".build/whisper-cli" ]; then
@@ -33,7 +33,7 @@ MODEL_FILE="ggml-${MODEL_SIZE}.bin"
 MODEL_PATH=""
 
 for dir in \
-    "$HOME/.config/open-wispr/models" \
+    "$HOME/.config/local-echo/models" \
     "$HOME/.cache/whisper"; do
     if [ -f "$dir/$MODEL_FILE" ]; then
         MODEL_PATH="$dir/$MODEL_FILE"
@@ -43,7 +43,7 @@ done
 
 if [ -z "$MODEL_PATH" ]; then
     echo "Downloading $MODEL_SIZE model..."
-    MODEL_DIR="$HOME/.config/open-wispr/models"
+    MODEL_DIR="$HOME/.config/local-echo/models"
     mkdir -p "$MODEL_DIR"
     MODEL_PATH="$MODEL_DIR/$MODEL_FILE"
     curl -L --progress-bar -o "$MODEL_PATH" \
@@ -51,7 +51,7 @@ if [ -z "$MODEL_PATH" ]; then
 fi
 pass "Model available: $MODEL_PATH"
 
-TMPDIR_TEST=$(mktemp -d /tmp/open-wispr-test.XXXXXX)
+TMPDIR_TEST=$(mktemp -d /tmp/local-echo-test.XXXXXX)
 trap 'rm -rf "$TMPDIR_TEST"' EXIT
 
 # Generate test audio using macOS text-to-speech
@@ -87,9 +87,9 @@ else
 fi
 
 # Test 3: Transcriber class via the bundled app
-BIN="$APP_DIR/Contents/MacOS/open-wispr"
+BIN="$APP_DIR/Contents/MacOS/local-echo"
 if [ ! -x "$BIN" ]; then
-    BIN=".build/release/open-wispr"
+    BIN=".build/release/local-echo"
 fi
 if [ -x "$BIN" ]; then
     if $BIN status 2>&1 | grep -q "Whisper CLI: yes"; then
