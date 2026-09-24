@@ -150,6 +150,12 @@ final class AudioCaptureUnit {
         }
     }
 
+    // Start the voice processing unit to activate ducking without writing a recording.
+    func startDucking() throws {
+        guard voiceProcessing, let unit else { return }
+        try Self.check(AudioOutputUnitStart(unit), "Start audio ducking")
+    }
+
     func stop() throws {
         guard let unit else { return }
         try Self.check(AudioOutputUnitStop(unit), "Stop microphone")

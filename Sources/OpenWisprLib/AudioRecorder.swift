@@ -111,6 +111,8 @@ class AudioRecorder {
             do {
                 let unit = try AudioCaptureUnit(route: route, voiceProcessing: true)
                 guard self.isCurrentDuckGeneration(generation) else { return }
+                try unit.startDucking()
+                guard self.isCurrentDuckGeneration(generation) else { return }
                 self.duckCapture = unit
             } catch {
                 print("Audio ducking unavailable: \(error.localizedDescription)")

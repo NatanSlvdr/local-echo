@@ -73,8 +73,10 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
 </plist>
 PLIST
 
+codesign --remove-signature "$APP_DIR/Contents/MacOS/whisper-cli"
+codesign --remove-signature "$APP_DIR/Contents/MacOS/open-wispr"
 SIGN_IDENTITY="${OPEN_WISPR_CODESIGN_IDENTITY:--}"
-codesign --force --sign "$SIGN_IDENTITY" "$APP_DIR/Contents/MacOS/whisper-cli"
-codesign --force --sign "$SIGN_IDENTITY" --identifier com.human37.open-wispr "$APP_DIR"
+codesign --sign "$SIGN_IDENTITY" "$APP_DIR/Contents/MacOS/whisper-cli"
+codesign --sign "$SIGN_IDENTITY" --identifier com.human37.open-wispr "$APP_DIR"
 
 echo "Built $APP_DIR"

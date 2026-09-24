@@ -50,7 +50,7 @@ Edit `~/.config/open-wispr/config.json`:
 }
 ```
 
-Restart the app after editing the file: press Ctrl-C in its terminal, then run `bash scripts/dev.sh` again.
+Restart the app after editing the file: quit OpenWispr from its menu bar icon, then run `bash scripts/dev.sh` again.
 
 To bind multiple hotkeys, use the `hotkeys` array instead:
 
