@@ -160,6 +160,20 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(config.toggleMode?.value, false)
     }
 
+    func testAudioDuckingDefaultsToDisabledForExistingConfigs() throws {
+        let json = #"{"modelSize":"base.en","language":"en","duckOtherAudio":true}"#.data(using: .utf8)!
+        let config = try Config.decode(from: json)
+        XCTAssertFalse(config.duckOtherAudioEnabled)
+    }
+
+    func testAudioDuckingSettingSurvivesConfigRoundTrip() throws {
+        var config = Config.defaultConfig
+        config.duckOtherAudioDuringRecording = FlexBool(true)
+        let data = try JSONEncoder().encode(config)
+        let decoded = try Config.decode(from: data)
+        XCTAssertTrue(decoded.duckOtherAudioEnabled)
+    }
+
     // MARK: - audioInputDevice decoding
 
     func testConfigDecodesAudioInputDeviceUID() throws {

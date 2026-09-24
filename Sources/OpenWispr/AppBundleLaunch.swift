@@ -1,5 +1,4 @@
 import AppKit
-import Darwin
 import Foundation
 
 enum AppBundleLaunch {
@@ -49,24 +48,21 @@ enum AppBundleLaunch {
             return false
         }
 
-        fputs("Relaunching via \(appURL.path) so Microphone/Accessibility apply to OpenWispr, not Terminal.\n", stdout)
-
-        let execError = executableURL.path.withCString { executable in
-            "start".withCString { start in
-                var arguments: [UnsafeMutablePointer<CChar>?] = [
-                    UnsafeMutablePointer(mutating: executable),
-                    UnsafeMutablePointer(mutating: start),
-                    nil,
-                ]
-                _ = arguments.withUnsafeMutableBufferPointer { buffer in
-                    Darwin.execv(executable, buffer.baseAddress)
-                }
-                return errno
+        // Launch Services gives the app bundle its own privacy identity for microphone access.
+        let launcher = Process()
+        launcher.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        launcher.arguments = ["-a", appURL.path, "--args", "start"]
+        do {
+            try launcher.run()
+            launcher.waitUntilExit()
+            if launcher.terminationStatus == 0 {
+                print("Launched \(appURL.path) through Launch Services.")
+                return true
             }
+            fputs("Error: could not start OpenWispr.app (open exited with \(launcher.terminationStatus)).\n", stderr)
+        } catch {
+            fputs("Error: could not start OpenWispr.app: \(error.localizedDescription)\n", stderr)
         }
-
-        let message = String(cString: strerror(execError))
-        fputs("Error: could not start OpenWispr.app: \(message)\n", stderr)
         return false
     }
 }

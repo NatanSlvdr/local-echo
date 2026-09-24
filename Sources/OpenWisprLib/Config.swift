@@ -14,8 +14,12 @@ public struct Config: Codable {
     public var spokenPunctuation: FlexBool?
     public var maxRecordings: Int?
     public var toggleMode: FlexBool?
+    // The former duckOtherAudio key is ignored so affected installs restart with ducking off.
+    public var duckOtherAudioDuringRecording: FlexBool?
     public var audioInputDeviceID: UInt32?
     public var audioInputDeviceUID: String?
+
+    public var duckOtherAudioEnabled: Bool { duckOtherAudioDuringRecording?.value ?? false }
 
     public var hotkey: HotkeyConfig {
         get { hotkeys[0] }
@@ -46,6 +50,7 @@ public struct Config: Codable {
         case spokenPunctuation
         case maxRecordings
         case toggleMode
+        case duckOtherAudioDuringRecording
         case audioInputDeviceID
         case audioInputDeviceUID
     }
@@ -68,6 +73,7 @@ public struct Config: Codable {
         self.spokenPunctuation = try c.decodeIfPresent(FlexBool.self, forKey: .spokenPunctuation)
         self.maxRecordings = try c.decodeIfPresent(Int.self, forKey: .maxRecordings)
         self.toggleMode = try c.decodeIfPresent(FlexBool.self, forKey: .toggleMode)
+        self.duckOtherAudioDuringRecording = try c.decodeIfPresent(FlexBool.self, forKey: .duckOtherAudioDuringRecording)
         self.audioInputDeviceID = try c.decodeIfPresent(UInt32.self, forKey: .audioInputDeviceID)
         self.audioInputDeviceUID = try c.decodeIfPresent(String.self, forKey: .audioInputDeviceUID)
     }
@@ -83,6 +89,7 @@ public struct Config: Codable {
         try c.encodeIfPresent(spokenPunctuation, forKey: .spokenPunctuation)
         try c.encodeIfPresent(maxRecordings, forKey: .maxRecordings)
         try c.encodeIfPresent(toggleMode, forKey: .toggleMode)
+        try c.encodeIfPresent(duckOtherAudioDuringRecording, forKey: .duckOtherAudioDuringRecording)
         try c.encodeIfPresent(audioInputDeviceID, forKey: .audioInputDeviceID)
         try c.encodeIfPresent(audioInputDeviceUID, forKey: .audioInputDeviceUID)
     }
@@ -96,6 +103,7 @@ public struct Config: Codable {
         spokenPunctuation: FlexBool?,
         maxRecordings: Int?,
         toggleMode: FlexBool?,
+        duckOtherAudioDuringRecording: FlexBool? = nil,
         audioInputDeviceID: UInt32? = nil,
         audioInputDeviceUID: String? = nil
     ) {
@@ -109,6 +117,7 @@ public struct Config: Codable {
         self.spokenPunctuation = spokenPunctuation
         self.maxRecordings = maxRecordings
         self.toggleMode = toggleMode
+        self.duckOtherAudioDuringRecording = duckOtherAudioDuringRecording
         self.audioInputDeviceID = audioInputDeviceID
         self.audioInputDeviceUID = audioInputDeviceUID
     }
@@ -257,7 +266,8 @@ public struct Config: Codable {
         whisperPrompt: nil,
         spokenPunctuation: FlexBool(false),
         maxRecordings: nil,
-        toggleMode: FlexBool(false)
+        toggleMode: FlexBool(false),
+        duckOtherAudioDuringRecording: FlexBool(false)
     )
 
     public static var configDir: URL {
