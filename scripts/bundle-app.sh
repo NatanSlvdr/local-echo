@@ -35,12 +35,25 @@ mkdir -p "$APP_DIR/Contents/Resources"
 
 cp "$BINARY" "$APP_DIR/Contents/MacOS/local-echo"
 cp "$WHISPER_BINARY" "$APP_DIR/Contents/MacOS/whisper-cli"
+WHISPER_SERVER="$(dirname "$WHISPER_BINARY")/whisper-server"
+if [ ! -x "$WHISPER_SERVER" ]; then
+    echo "whisper-server not found. Run scripts/build-whisper.sh." >&2
+    exit 1
+fi
+cp "$WHISPER_SERVER" "$APP_DIR/Contents/MacOS/whisper-server"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cp "$REPO_DIR/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 mkdir -p "$APP_DIR/Contents/Resources/Licenses"
 cp "$REPO_DIR/Resources/WhisperLicense.txt" "$APP_DIR/Contents/Resources/Licenses/whisper.cpp.txt"
+mkdir -p "$APP_DIR/Contents/Resources/ModelRuntime"
+cp "$REPO_DIR/Resources/ModelRuntime/worker.py" "$REPO_DIR/Resources/ModelRuntime/requirements.txt" "$APP_DIR/Contents/Resources/ModelRuntime/"
+if ! command -v uv >/dev/null 2>&1; then
+    echo "uv not found. Install uv before bundling MLX models." >&2
+    exit 1
+fi
+cp "$(command -v uv)" "$APP_DIR/Contents/MacOS/uv"
 
 cat > "$APP_DIR/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -74,9 +87,13 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
 PLIST
 
 codesign --remove-signature "$APP_DIR/Contents/MacOS/whisper-cli"
+codesign --remove-signature "$APP_DIR/Contents/MacOS/whisper-server"
 codesign --remove-signature "$APP_DIR/Contents/MacOS/local-echo"
+codesign --remove-signature "$APP_DIR/Contents/MacOS/uv"
+codesign --sign "${LOCAL_ECHO_CODESIGN_IDENTITY:--}" "$APP_DIR/Contents/MacOS/uv"
 SIGN_IDENTITY="${LOCAL_ECHO_CODESIGN_IDENTITY:--}"
 codesign --sign "$SIGN_IDENTITY" "$APP_DIR/Contents/MacOS/whisper-cli"
+codesign --sign "$SIGN_IDENTITY" "$APP_DIR/Contents/MacOS/whisper-server"
 codesign --sign "$SIGN_IDENTITY" --identifier com.natanslvdr.local-echo "$APP_DIR"
 
 echo "Built $APP_DIR"

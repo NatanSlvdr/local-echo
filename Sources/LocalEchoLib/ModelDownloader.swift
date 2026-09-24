@@ -9,9 +9,39 @@ public final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unche
     private var completion: ((Error?) -> Void)?
     private var destPath: URL?
 
+    public static func modelExists(_ id: String) -> Bool {
+        guard let model = ModelCatalog.model(id) else { return false }
+        if model.backend == .whisper { return Transcriber.findModel(modelSize: id) != nil }
+        guard let repository = model.repository,
+              let marker = try? String(contentsOf: model.directory.appendingPathComponent(".local-echo-ready"), encoding: .utf8),
+              marker == repository else { return false }
+        return (try? FileManager.default.contentsOfDirectory(atPath: model.directory.path))?
+            .contains(where: { $0.hasSuffix(".safetensors") }) ?? false
+    }
+
     public static func download(modelSize: String, onProgress: ((Double) -> Void)? = nil) throws {
         downloadLock.lock()
         defer { downloadLock.unlock() }
+        guard let model = ModelCatalog.model(modelSize) else { throw ModelDownloadError.downloadFailed }
+        if model.backend != .whisper {
+            if modelExists(modelSize) { return }
+            let process = Process()
+            process.executableURL = try PythonRuntime.pythonURL()
+            process.arguments = [PythonRuntime.workerURL().path, "prepare", model.repository!, model.directory.path]
+            let stdout = Pipe()
+            let stderr = Pipe()
+            process.standardOutput = stdout
+            process.standardError = stderr
+            try process.run()
+            let (_, errors) = ProcessOutput.read(stdout: stdout, stderr: stderr)
+            process.waitUntilExit()
+            guard process.terminationStatus == 0, modelExists(modelSize) else {
+                let detail = String(data: errors, encoding: .utf8) ?? "Unknown download error"
+                throw ModelDownloadError.runtimeError(detail.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            onProgress?(100)
+            return
+        }
         let modelFileName = "ggml-\(modelSize).bin"
         let modelsDir = Config.configDir.appendingPathComponent("models")
         let destPath = modelsDir.appendingPathComponent(modelFileName)
@@ -111,6 +141,7 @@ public enum ModelDownloadError: LocalizedError {
     case downloadFailed
     case httpError(Int)
     case invalidModelData
+    case runtimeError(String)
 
     public var errorDescription: String? {
         switch self {
@@ -120,6 +151,8 @@ public enum ModelDownloadError: LocalizedError {
             return "Download failed with HTTP status \(statusCode). Check your network connection or proxy settings."
         case .invalidModelData:
             return "Downloaded file is not a valid GGML model (possibly a proxy error page). Check your network connection or try downloading from a different network."
+        case .runtimeError(let detail):
+            return "Model setup failed: \(detail)"
         }
     }
 }

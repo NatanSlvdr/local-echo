@@ -15,8 +15,9 @@ func printUsage() {
         local-echo start              Start the dictation daemon
         local-echo set-hotkey <key>   Set the push-to-talk hotkey
         local-echo get-hotkey         Show current hotkey
-        local-echo set-model <size>   Set the Whisper model
-        local-echo download-model [size]  Download a Whisper model
+        local-echo set-model <id>     Set the speech model
+        local-echo set-cleanup <id|off>  Set transcript cleanup
+        local-echo download-model [id]  Download a model
         local-echo status             Show configuration and status
         local-echo --help             Show this help message
 
@@ -28,7 +29,25 @@ func printUsage() {
 
     AVAILABLE MODELS:
         \(Config.supportedModels.joined(separator: ", "))
+    CLEANUP MODEL:
+        \(ModelCatalog.cleanup.id) (or off)
     """)
+}
+
+func cmdSetCleanup(_ id: String) {
+    guard id == "off" || id == ModelCatalog.cleanup.id else {
+        print("Error: Unknown cleanup model '\(id)'")
+        exit(1)
+    }
+    var config = Config.load()
+    config.cleanupModel = id == "off" ? nil : id
+    do {
+        try config.save()
+        print("Cleanup set to: \(id)")
+    } catch {
+        print("Error saving config: \(error.localizedDescription)")
+        exit(1)
+    }
 }
 
 @MainActor func cmdStart() {
@@ -120,9 +139,9 @@ func cmdGetHotkey() {
 }
 
 func cmdDownloadModel(_ size: String) {
-    guard Config.supportedModels.contains(size) else {
+    guard ModelCatalog.model(size) != nil else {
         print("Error: Unknown model '\(size)'")
-        print("Available: \(Config.supportedModels.joined(separator: ", "))")
+        print("Available: \((Config.supportedModels + [ModelCatalog.cleanup.id]).joined(separator: ", "))")
         exit(1)
     }
     do {
@@ -141,8 +160,12 @@ func cmdStatus() {
     print("Config:      \(Config.configFile.path)")
     print("Hotkey:      \(hotkeyDesc)")
     print("Model:       \(config.modelSize)")
-    print("Model ready: \(Transcriber.modelExists(modelSize: config.modelSize) ? "yes" : "no")")
-    print("Whisper CLI: \(Transcriber.findWhisperBinary() != nil ? "yes" : "no")")
+    print("Model ready: \(ModelDownloader.modelExists(config.modelSize) ? "yes" : "no")")
+    print("Cleanup:     \(config.cleanupModel ?? "off")")
+    if let cleanup = config.cleanupModel {
+        print("Cleanup ready: \(ModelDownloader.modelExists(cleanup) ? "yes" : "no")")
+    }
+    print("Whisper server: \(Transcriber.findWhisperServerBinary() != nil ? "yes" : "no")")
     print("Language:    Auto-detect")
     let toggleMode = config.toggleMode?.value ?? false
     print("Toggle:      \(toggleMode ? "on (press to start/stop)" : "off (hold to talk)")")
@@ -173,6 +196,12 @@ case "set-model":
         exit(1)
     }
     cmdSetModel(args[2])
+case "set-cleanup":
+    guard args.count > 2 else {
+        print("Usage: local-echo set-cleanup <id|off>")
+        exit(1)
+    }
+    cmdSetCleanup(args[2])
 case "get-hotkey":
     cmdGetHotkey()
 case "download-model":

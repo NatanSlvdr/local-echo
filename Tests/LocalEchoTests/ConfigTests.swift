@@ -223,36 +223,24 @@ final class ConfigTests: XCTestCase {
 
     // MARK: - Language and model constants
 
-    func testOnlyThreeMultilingualModelsAreSelectable() {
-        XCTAssertEqual(Config.supportedModels, ["large-v3-turbo", "medium", "large-v3"])
+    func testFourSpeechModelsAreSelectable() {
+        XCTAssertEqual(Config.supportedModels, ["qwen3-asr-1.7b-8bit", "parakeet-tdt-v3-mixed", "qwen3-asr-1.7b-4bit", "large-v3-turbo"])
     }
 
     func testSupportedModelsContainsDefault() {
         XCTAssertTrue(Config.supportedModels.contains(Config.defaultConfig.modelSize))
     }
 
-    // MARK: - Model alias resolution
-
-    func testResolveModelAliasMapsLargeToLargeV3() {
-        XCTAssertEqual(Config.resolveModelAlias("large"), "large-v3")
+    func testCleanupDefaultsOnAndCanBeDisabled() throws {
+        let legacy = try Config.decode(from: Data(#"{"modelSize":"large-v3-turbo"}"#.utf8))
+        XCTAssertEqual(legacy.cleanupModel, ModelCatalog.cleanup.id)
+        let off = try Config.decode(from: Data(#"{"modelSize":"large-v3-turbo","cleanupModel":"off"}"#.utf8))
+        XCTAssertNil(off.cleanupModel)
+        let saved = String(data: try JSONEncoder().encode(off), encoding: .utf8)
+        XCTAssertTrue(saved?.contains("\"cleanupModel\":\"off\"") == true)
     }
 
-    func testResolveModelAliasReturnsInputForNonAliased() {
-        XCTAssertEqual(Config.resolveModelAlias("base.en"), "base.en")
-        XCTAssertEqual(Config.resolveModelAlias("large-v3"), "large-v3")
-        XCTAssertEqual(Config.resolveModelAlias("nonexistent"), "nonexistent")
-    }
-
-    func testModelAliasDestinationsAreSupported() {
-        for canonical in Config.modelAliases.values {
-            XCTAssertTrue(
-                Config.supportedModels.contains(canonical),
-                "Alias destination '\(canonical)' must be in Config.supportedModels"
-            )
-        }
-    }
-
-    func testConfigDecodeResolvesLargeAlias() throws {
+    func testRemovedLargeModelMigratesToTurbo() throws {
         let json = """
         {
             "hotkey": {"keyCode": 63, "modifiers": []},
@@ -261,7 +249,7 @@ final class ConfigTests: XCTestCase {
         }
         """.data(using: .utf8)!
         let config = try Config.decode(from: json)
-        XCTAssertEqual(config.modelSize, "large-v3")
+        XCTAssertEqual(config.modelSize, "large-v3-turbo")
     }
 
     func testLegacyLanguageIsIgnoredAndNotSaved() throws {
@@ -270,7 +258,7 @@ final class ConfigTests: XCTestCase {
         let saved = try JSONEncoder().encode(config)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: saved) as? [String: Any])
         XCTAssertNil(object["language"])
-        XCTAssertEqual(config.modelSize, "medium")
+        XCTAssertEqual(config.modelSize, "large-v3-turbo")
     }
 
     func testLegacyEnglishModelMovesToMultilingualDefault() throws {

@@ -3,71 +3,18 @@ import Foundation
 public final class Transcriber: Sendable {
     private let modelSize: String
     private let whisperPrompt: String?
-    public let spokenPunctuation: Bool
 
-    public init(modelSize: String = "large-v3-turbo", whisperPrompt: String? = nil, spokenPunctuation: Bool = false) {
+    public init(modelSize: String = "large-v3-turbo", whisperPrompt: String? = nil) {
         self.modelSize = modelSize
         self.whisperPrompt = whisperPrompt
-        self.spokenPunctuation = spokenPunctuation
     }
 
     public func transcribe(audioURL: URL) throws -> String {
-        guard let whisperPath = Transcriber.findWhisperBinary() else {
-            throw TranscriberError.whisperNotFound
-        }
-
-        guard let modelPath = Transcriber.findModel(modelSize: modelSize) else {
+        guard let model = ModelCatalog.speechModel(modelSize) else {
             throw TranscriberError.modelNotFound(modelSize)
         }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: whisperPath)
-        process.arguments = arguments(modelPath: modelPath, audioURL: audioURL)
-
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
-        try process.run()
-
-        let (data, stderrData) = ProcessOutput.read(stdout: stdoutPipe, stderr: stderrPipe)
-        process.waitUntilExit()
-
-        let output = Transcriber.stripWhisperMarkers(
-            String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        )
-
-        if process.terminationStatus != 0 {
-            let stderr = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !stderr.isEmpty { fputs("whisper-cli: \(stderr)\n", Foundation.stderr) }
-            throw TranscriberError.transcriptionFailed
-        }
-
-        return output
-    }
-
-    func arguments(modelPath: String, audioURL: URL) -> [String] {
-        var args = [
-            "-m", modelPath,
-            "-f", audioURL.path,
-            "-l", "auto",
-            "-nt",
-            // Disable cross-window context carry-over. whisper.cpp feeds each
-            // 30s window's decoded text as the prompt for the next window; on
-            // long dictation this compounds into repetition/hallucination
-            // loops (sentences repeating verbatim, then trailing off).
-            // max-context 0 decodes each window independently and stops it.
-            "-mc", "0",
-        ]
-        if let prompt = effectiveWhisperPrompt {
-            args += ["--prompt", prompt]
-        }
-        if spokenPunctuation {
-            args += ["--suppress-regex", "[,\\.\\?!;:\\-—]"]
-        }
-
-        return args
+        return try ModelRuntime.shared.transcribe(model: model, audioURL: audioURL,
+                                                  prompt: model.backend == .whisper ? effectiveWhisperPrompt : nil)
     }
 
     private var effectiveWhisperPrompt: String? {
@@ -132,6 +79,20 @@ public final class Transcriber: Sendable {
         return nil
     }
 
+    public static func findWhisperServerBinary() -> String? {
+        if let executable = Bundle.main.executableURL {
+            let directory = executable.resolvingSymlinksInPath().deletingLastPathComponent()
+            let candidates = [directory.appendingPathComponent("whisper-server"),
+                              directory.deletingLastPathComponent().appendingPathComponent("Local-Echo.app/Contents/MacOS/whisper-server")]
+            if let bundled = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) {
+                return bundled.path
+            }
+        }
+        let candidates = [FileManager.default.currentDirectoryPath + "/.build/whisper-server",
+                          "/opt/homebrew/bin/whisper-server", "/usr/local/bin/whisper-server"]
+        return candidates.first(where: FileManager.default.isExecutableFile(atPath:))
+    }
+
     // The app bundle carries its own transcriber; source builds can use PATH.
     static func bundledWhisperPath(forExecutable executable: URL) -> String? {
         let directory = executable.resolvingSymlinksInPath().deletingLastPathComponent()
@@ -143,7 +104,7 @@ public final class Transcriber: Sendable {
     }
 
     public static func modelExists(modelSize: String) -> Bool {
-        return findModel(modelSize: modelSize) != nil
+        return ModelDownloader.modelExists(modelSize)
     }
 
     static func findModel(modelSize: String) -> String? {
@@ -199,18 +160,12 @@ private final class LockedData: @unchecked Sendable {
 }
 
 enum TranscriberError: LocalizedError {
-    case whisperNotFound
     case modelNotFound(String)
-    case transcriptionFailed
 
     var errorDescription: String? {
         switch self {
-        case .whisperNotFound:
-            return "whisper-cli not found. Rebuild Local-Echo.app with whisper-cli on PATH."
         case .modelNotFound(let size):
-            return "Whisper model '\(size)' not found. Download it with: local-echo download-model \(size)"
-        case .transcriptionFailed:
-            return "Transcription failed"
+            return "Speech model '\(size)' not found. Download it with: local-echo download-model \(size)"
         }
     }
 }

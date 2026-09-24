@@ -4,6 +4,7 @@ public struct Config: Codable, Sendable {
     public var hotkeys: [HotkeyConfig]
     public var modelPath: String?
     public var modelSize: String
+    public var cleanupModel: String?
     public var whisperPrompt: String?
     public var spokenPunctuation: FlexBool?
     public var maxRecordings: Int?
@@ -39,6 +40,7 @@ public struct Config: Codable, Sendable {
         case hotkeys
         case modelPath
         case modelSize
+        case cleanupModel
         case whisperPrompt
         case spokenPunctuation
         case maxRecordings
@@ -61,6 +63,9 @@ public struct Config: Codable, Sendable {
         }
         self.modelPath = try c.decodeIfPresent(String.self, forKey: .modelPath)
         self.modelSize = try c.decode(String.self, forKey: .modelSize)
+        self.cleanupModel = try c.decodeIfPresent(String.self, forKey: .cleanupModel) ?? ModelCatalog.cleanup.id
+        if cleanupModel == "off" { cleanupModel = nil }
+        if cleanupModel != nil && cleanupModel != ModelCatalog.cleanup.id { cleanupModel = ModelCatalog.cleanup.id }
         self.whisperPrompt = try c.decodeIfPresent(String.self, forKey: .whisperPrompt)
         self.spokenPunctuation = try c.decodeIfPresent(FlexBool.self, forKey: .spokenPunctuation)
         self.maxRecordings = try c.decodeIfPresent(Int.self, forKey: .maxRecordings)
@@ -76,6 +81,7 @@ public struct Config: Codable, Sendable {
         try c.encode(hotkeys[0], forKey: .hotkey)
         try c.encodeIfPresent(modelPath, forKey: .modelPath)
         try c.encode(modelSize, forKey: .modelSize)
+        try c.encode(cleanupModel ?? "off", forKey: .cleanupModel)
         try c.encodeIfPresent(whisperPrompt, forKey: .whisperPrompt)
         try c.encodeIfPresent(spokenPunctuation, forKey: .spokenPunctuation)
         try c.encodeIfPresent(maxRecordings, forKey: .maxRecordings)
@@ -89,6 +95,7 @@ public struct Config: Codable, Sendable {
         hotkeys: [HotkeyConfig],
         modelPath: String?,
         modelSize: String,
+        cleanupModel: String? = ModelCatalog.cleanup.id,
         whisperPrompt: String? = nil,
         spokenPunctuation: FlexBool?,
         maxRecordings: Int?,
@@ -102,6 +109,7 @@ public struct Config: Codable, Sendable {
             : Config.deduplicateHotkeys(hotkeys)
         self.modelPath = modelPath
         self.modelSize = modelSize
+        self.cleanupModel = cleanupModel
         self.whisperPrompt = whisperPrompt
         self.spokenPunctuation = spokenPunctuation
         self.maxRecordings = maxRecordings
@@ -111,20 +119,11 @@ public struct Config: Codable, Sendable {
         self.audioInputDeviceUID = audioInputDeviceUID
     }
 
-    public static let supportedModels = ["large-v3-turbo", "medium", "large-v3"]
+    public static let supportedModels = ModelCatalog.speech.map(\.id)
 
-    // Existing English-only selections cannot detect language, so move them to a multilingual model.
+    // Removed model selections migrate to the existing multilingual default.
     public static func supportedModel(_ size: String) -> String {
-        let resolved = resolveModelAlias(size)
-        return supportedModels.contains(resolved) ? resolved : defaultConfig.modelSize
-    }
-
-    public static let modelAliases: [String: String] = [
-        "large": "large-v3",
-    ]
-
-    public static func resolveModelAlias(_ size: String) -> String {
-        return modelAliases[size] ?? size
+        return supportedModels.contains(size) ? size : defaultConfig.modelSize
     }
 
     public static let defaultMaxRecordings = 0

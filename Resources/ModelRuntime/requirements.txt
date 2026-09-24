@@ -1,0 +1,8 @@
+mlx-audio==0.5.6
+mlx-qwen3-asr==0.4.4
+parakeet-mlx==0.5.2
+mlx-lm==0.31.3
+huggingface_hub[hf_xet]==1.33.0
+librosa==1.0.0
+soundfile==0.14.0
+pyyaml==6.0.3

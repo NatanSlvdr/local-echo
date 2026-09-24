@@ -4,6 +4,7 @@ import AppKit
 final class OptionsWindowController: NSWindowController, NSWindowDelegate {
     private let onConfigChange: (Config) -> Void
     private let modelPopup = NSPopUpButton()
+    private let cleanupPopup = NSPopUpButton()
     private let audioPopup = NSPopUpButton()
     private let toggleSwitch = NSSwitch()
     private let duckSwitch = NSSwitch()
@@ -13,7 +14,7 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
     init(onConfigChange: @escaping (Config) -> Void) {
         self.onConfigChange = onConfigChange
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 370),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 420),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -52,10 +53,21 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
         stack.addArrangedSubview(heading)
 
         stack.addArrangedSubview(sectionLabel("Recognition"))
-        modelPopup.addItems(withTitles: Config.supportedModels)
+        for model in ModelCatalog.speech {
+            modelPopup.addItem(withTitle: model.name + " (" + model.approximateDownload + ")")
+            modelPopup.lastItem?.representedObject = model.id
+        }
         modelPopup.target = self
         modelPopup.action = #selector(modelChanged(_:))
         addRow("Model", control: modelPopup, to: stack)
+
+        cleanupPopup.addItem(withTitle: "Off")
+        cleanupPopup.lastItem?.representedObject = "off"
+        cleanupPopup.addItem(withTitle: ModelCatalog.cleanup.name)
+        cleanupPopup.lastItem?.representedObject = ModelCatalog.cleanup.id
+        cleanupPopup.target = self
+        cleanupPopup.action = #selector(cleanupChanged(_:))
+        addRow("Cleanup", control: cleanupPopup, to: stack)
 
         audioPopup.target = self
         audioPopup.action = #selector(audioChanged(_:))
@@ -88,7 +100,8 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
             stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
             stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
             stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 22),
-            modelPopup.widthAnchor.constraint(equalToConstant: 235),
+            modelPopup.widthAnchor.constraint(equalToConstant: 355),
+            cleanupPopup.widthAnchor.constraint(equalToConstant: 355),
             audioPopup.widthAnchor.constraint(equalToConstant: 235),
         ])
     }
@@ -113,7 +126,8 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func refresh(config: Config, isRecording: Bool) {
-        modelPopup.selectItem(withTitle: config.modelSize)
+        modelPopup.selectItem(at: ModelCatalog.speech.firstIndex(where: { $0.id == config.modelSize }) ?? 0)
+        cleanupPopup.selectItem(at: config.cleanupModel == nil ? 0 : 1)
         hotkeyValue.stringValue = config.hotkeySummary()
         toggleSwitch.state = (config.toggleMode?.value ?? false) ? .on : .off
         duckSwitch.state = config.duckOtherAudioEnabled ? .on : .off
@@ -148,8 +162,13 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func modelChanged(_ sender: NSPopUpButton) {
-        guard let model = sender.selectedItem?.title else { return }
+        guard let model = sender.selectedItem?.representedObject as? String else { return }
         saveChange { $0.modelSize = model }
+    }
+
+    @objc private func cleanupChanged(_ sender: NSPopUpButton) {
+        let id = sender.selectedItem?.representedObject as? String
+        saveChange { $0.cleanupModel = id == "off" ? nil : ModelCatalog.cleanup.id }
     }
 
     @objc private func audioChanged(_ sender: NSPopUpButton) {

@@ -9,11 +9,11 @@
   Everything runs on-device. No audio or text ever leaves your machine.
 </p>
 
-<p align="center">Powered by <a href="https://github.com/ggml-org/whisper.cpp">whisper.cpp</a> with Metal acceleration on Apple Silicon.</p>
+<p align="center">Powered by whisper.cpp and MLX on Apple Silicon.</p>
 
 ## Run from source
 
-Local-Echo requires macOS 13 or later, the Xcode Command Line Tools, Git, and CMake. The development script builds a portable, statically linked `whisper-cli` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and bundles it in the app. The app downloads its speech model on first run.
+Local-Echo requires an Apple Silicon Mac, macOS 13 or later, the Xcode Command Line Tools, Git, CMake, and [`uv`](https://docs.astral.sh/uv/getting-started/installation/). The development script builds `whisper-cli` and `whisper-server` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and bundles the runtimes in the app. The selected speech and cleanup models download on first run.
 
 From a checkout of this repository, run:
 
@@ -21,9 +21,9 @@ From a checkout of this repository, run:
 bash scripts/dev.sh
 ```
 
-This builds a signed app at `~/Library/Application Support/Local-Echo/dev/Local-Echo.app` containing `whisper-cli` and launches it through macOS. The app keeps running after the command returns; choose **Quit** from the menu bar before rebuilding. Logs are written to `~/.config/local-echo/dev.log`. The finished app runs without a separate `whisper-cli` installation. The Swift build script calls `swiftc` directly, so it also works with Command Line Tools installations where Swift Package Manager cannot load manifests.
+This builds a signed app at `~/Library/Application Support/Local-Echo/dev/Local-Echo.app` containing the model runtimes and launches it through macOS. The app keeps running after the command returns; choose **Quit** from the menu bar before rebuilding. Logs are written to `~/.config/local-echo/dev.log`. The finished app runs without separate Whisper or MLX installations. The Swift build script calls `swiftc` directly, so it also works with Command Line Tools installations where Swift Package Manager cannot load manifests.
 
-The default Swift build uses debug symbols and skips optimization for faster iteration. `whisper-cli` is reused until its pinned version or build recipe changes; run `bash scripts/build-whisper.sh --force` after editing its source. To check the optimized build through the same signed app workflow, quit the app and run `bash scripts/dev.sh release`.
+The default Swift build uses debug symbols and skips optimization for faster iteration. The whisper.cpp binaries are reused until their pinned version or build recipe changes; run `bash scripts/build-whisper.sh --force` after editing its source. To check the optimized build through the same signed app workflow, quit the app and run `bash scripts/dev.sh release`.
 
 When an Apple Development signing identity is available, the dev script uses it so macOS can keep the app's microphone permission across rebuilds. Otherwise the app is signed locally and macOS may ask for permission again after a rebuild.
 
@@ -45,6 +45,7 @@ If you used the previous app name, Local-Echo copies your existing settings into
 {
   "hotkey": { "keyCode": 63, "modifiers": [] },
   "modelSize": "large-v3-turbo",
+  "cleanupModel": "qwen35-08b-qat-q4",
   "spokenPunctuation": false,
   "whisperPrompt": "Use punctuation and capitalization.",
   "maxRecordings": 0,
@@ -73,7 +74,8 @@ Both `hotkey` (single) and `hotkeys` (array) are supported. If both are present,
 | **hotkey** | `63` | Globe (`63`), Right Option (`61`), F5 (`96`), or any key code |
 | **hotkeys** | — | Array of hotkey objects — bind multiple keys to trigger dictation |
 | **modifiers** | `[]` | `"cmd"`, `"ctrl"`, `"shift"`, `"opt"` — combine for chords |
-| **modelSize** | `"large-v3-turbo"` | `large-v3-turbo`, `medium`, or `large-v3` |
+| **modelSize** | `"large-v3-turbo"` | `large-v3-turbo`, `qwen3-asr-1.7b-8bit`, `parakeet-tdt-v3-mixed`, or `qwen3-asr-1.7b-4bit` |
+| **cleanupModel** | `"qwen35-08b-qat-q4"` | This Qwen3.5 cleanup model, or `"off"` |
 | **spokenPunctuation** | `false` | Say "comma", "period", etc. to insert punctuation instead of auto-punctuation |
 | **whisperPrompt** | — | Optional prompt text passed to Whisper to guide style, vocabulary, or punctuation. Omit it or leave it blank to use Whisper's default behavior. |
 | **maxRecordings** | `0` | Optionally store past recordings locally as `.wav` files for re-transcribing from the tray menu. `0` = nothing stored (default). Set 1-100 to keep that many recent recordings. |
@@ -82,15 +84,7 @@ Both `hotkey` (single) and `hotkeys` (array) are supported. If both are present,
 
 ### Models
 
-Local-Echo detects the spoken language automatically. Choose from these multilingual models:
-
-| Model | Size | Speed | Accuracy | Best for |
-|---|---|---|---|---|
-| **`large-v3-turbo`** | **1.6 GB** | **Moderate** | **Great** | **Default; fast multilingual dictation** |
-| `medium` | 1.5 GB | Slower | Great | Multilingual dictation |
-| `large-v3` | 3 GB | Slowest | Best | Highest accuracy (M1 Pro+ recommended) |
-
-Existing configurations using another model are moved to `large-v3-turbo` on launch. See [MODELS.md](MODELS.md) for details.
+Choose among Qwen3 ASR INT8, compact Parakeet, balanced Qwen3 ASR Q4/Q8, and Whisper Large v3 Turbo. Cleanup uses Qwen3.5 0.8B QAT Q4. See [MODELS.md](MODELS.md) for IDs, sizes, and runtime details.
 
 If the Globe key opens the emoji picker: **System Settings → Keyboard → "Press 🌐 key to" → "Do Nothing"**
 
@@ -108,7 +102,7 @@ Click the waveform icon for status and options. **Recent Recordings** lists your
 
 Click the menu bar icon to access **Copy Last Dictation** — recovers your most recent transcription if you dictated without a text field focused.
 
-Choose **Options...** to open the settings window. It contains the model and microphone selectors, recording switches, and buttons to open or reload the configuration file.
+Choose **Options...** to open the settings window. It contains the speech model, cleanup, and microphone selectors, recording switches, and buttons to open or reload the configuration file.
 
 ## Compare
 
@@ -118,12 +112,12 @@ Choose **Options...** to open the settings window. It contains the model and mic
 | **Open source** | MIT | GPLv3 | No | No | No |
 | **100% on-device** | Yes | Yes | No | Yes | Partial |
 | **Push-to-talk** | Yes | Yes | Yes | Yes | No |
-| **AI features** | No | AI assistant | AI rewriting | AI formatting | No |
+| **AI features** | Local cleanup | AI assistant | AI rewriting | AI formatting | No |
 | **Account required** | No | No | Yes | Yes | Apple ID |
 
 ## Privacy
 
-Local-Echo is completely local. Audio is recorded to a temp file, transcribed by whisper.cpp on your CPU/GPU, and the temp file is deleted. No network requests are made except to download the Whisper model on first run. Optionally, you can configure Local-Echo to store a number of past recordings locally via the `maxRecordings` setting. Those recordings stay private and on your machine, and we default to not storing anything.
+Local-Echo is completely local. Audio is recorded to a temp file, transcribed by the selected local model, and the temp file is deleted. Network requests are only made to install the local MLX runtime and download selected models. Optionally, you can configure Local-Echo to store a number of past recordings locally via the `maxRecordings` setting. Those recordings stay private and on your machine, and we default to not storing anything.
 
 ## Roadmap
 
@@ -142,7 +136,7 @@ bash scripts/bundle-app.sh .build/release/local-echo "$APP_DIR" dev
 open -a "$APP_DIR" --args start
 ```
 
-`bundle-app.sh` copies the static `whisper-cli` into the app and rejects executables linked to third-party libraries. The selected speech model downloads on first launch to `~/.config/local-echo/models/`.
+`bundle-app.sh` copies the whisper.cpp binaries, `uv`, and the MLX worker into the app. The selected speech and cleanup models download on first launch to `~/.config/local-echo/models/`.
 
 ## Support
 

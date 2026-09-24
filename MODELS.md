@@ -1,13 +1,16 @@
 # Models
 
-Local-Echo offers three multilingual Whisper models. It detects the spoken language automatically.
+Local-Echo offers four speech models. Choose one in **Options → Model** or with `local-echo set-model <id>`. The selected model downloads on first use. Each loaded model stays in memory for 15 minutes after its last use, then unloads automatically.
 
-| Model | Size | Speed | Accuracy | Notes |
-|---|---|---|---|---|
-| **`large-v3-turbo`** | **1.6 GB** | **Moderate** | **Great** | **Default; fast multilingual dictation** |
-| `medium` | 1.5 GB | Slower | Great | Multilingual dictation |
-| `large-v3` | 3 GB | Slowest | Best | Highest accuracy (M1 Pro+ recommended) |
+| Choice | ID | Download | Reference speed | Notes |
+|---|---|---:|---:|---|
+| Quality | `qwen3-asr-1.7b-8bit` | ~2.5 GB | 30.5× real time | [Qwen3 ASR 1.7B INT8](https://huggingface.co/mlx-community/Qwen3-ASR-1.7B-8bit) via MLX Audio |
+| Compact | `parakeet-tdt-v3-mixed` | ~400 MB | 69× real time | [Parakeet TDT v3 mixed Q4/Q8](https://huggingface.co/MarkChen1214/parakeet-tdt-0.6b-v3-MLX-Mixed-4bit8bit), 25 European languages |
+| Balanced | `qwen3-asr-1.7b-4bit` | ~1.2 GB | Faster than INT8 on the publisher's test | [Qwen3 ASR 1.7B Q4 decoder / Q8 encoder](https://huggingface.co/moona3k/mlx-qwen3-asr-1.7b-4bit) |
+| Existing default | `large-v3-turbo` | ~1.6 GB | Depends on hardware | Whisper Large v3 Turbo via whisper.cpp |
 
-Existing configurations using another model are moved to `large-v3-turbo` on launch. The language setting from older configurations is ignored and removed when the configuration is saved.
+Speed figures are model publisher benchmarks, not guarantees for this app or your Mac. The Parakeet figure excludes model loading. The Qwen models and Parakeet run on Apple Silicon through an isolated Python MLX environment. The app installs that environment on first use using bundled `uv`. Turbo uses a persistent local `whisper-server`. Audio and transcript processing stay on your Mac.
 
-Models are downloaded on demand from [`ggerganov/whisper.cpp`](https://huggingface.co/ggerganov/whisper.cpp/tree/main) on HuggingFace and cached in `~/.config/local-echo/models/`.
+The cleanup stage runs after transcription and spoken punctuation processing. Its only model is [`qwen35-08b-qat-q4`](https://huggingface.co/YoozLabs/Qwen3.5-0.8B-qat-lean-4bit-mlx), a ~500 MB Qwen3.5 0.8B QAT Q4 model. Cleanup is enabled by default and can be switched **Off** in Options or with `local-echo set-cleanup off`. It corrects punctuation, capitalization, spacing, and obvious recognition errors while aiming to preserve meaning. Generated edits can still be wrong, so check important dictation.
+
+The app stores MLX checkpoints under `~/.config/local-echo/models/` and its Python environment under `~/.config/local-echo/runtime/`. Existing `medium`, `large-v3`, and other removed selections move to `large-v3-turbo` when the configuration loads. Previously downloaded files are left on disk.

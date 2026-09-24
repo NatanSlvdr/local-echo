@@ -12,7 +12,7 @@ From a checkout of this repository:
 bash scripts/dev.sh
 ```
 
-The script builds and signs `~/Library/Application Support/Local-Echo/dev/Local-Echo.app`, then starts it through macOS. The app keeps running after the command returns; choose **Quit** from the menu bar to stop it before rebuilding. Logs are written to `~/.config/local-echo/dev.log`. On first run, Local-Echo downloads its default speech model to `~/.config/local-echo/models/`.
+The script builds and signs `~/Library/Application Support/Local-Echo/dev/Local-Echo.app`, then starts it through macOS. The app keeps running after the command returns; choose **Quit** from the menu bar to stop it before rebuilding. Logs are written to `~/.config/local-echo/dev.log`. On first run, Local-Echo downloads its default speech and cleanup models to `~/.config/local-echo/models/`.
 
 Existing settings from `~/.config/open-wispr/config.json` are copied to the new configuration path on first launch. Previously downloaded models and saved recordings remain available from the old data directory. Because the app bundle identifier changed, macOS may ask you to grant Microphone and Accessibility access again.
 
@@ -21,7 +21,7 @@ To inspect the configuration or change it, use the built CLI:
 ```bash
 .build/debug/local-echo status
 .build/debug/local-echo set-hotkey f5
-.build/debug/local-echo set-model medium
+.build/debug/local-echo set-model parakeet-tdt-v3-mixed
 ```
 
 Restart the app after changing settings.
@@ -44,7 +44,7 @@ On non-English macOS installations, the Settings names are translated; the app n
 
 ## Troubleshooting
 
-### `whisper-cli` is not found
+### `whisper-server` is not found
 
 Run `bash scripts/build-whisper.sh`, then rebuild the app with `bash scripts/dev.sh`. Check that `~/Library/Application Support/Local-Echo/dev/Local-Echo.app/Contents/MacOS/whisper-cli` exists.
 
@@ -68,4 +68,4 @@ If `~/.config/local-echo/config.json` contains invalid JSON or unsupported value
 
 ## Language support
 
-Local-Echo detects the spoken language automatically with any of its three multilingual models. Choose `large-v3-turbo` (default), `medium`, or `large-v3` in the menu bar or with `local-echo set-model <size>`. The model downloads automatically on the next run. See [MODELS.md](../MODELS.md) for model choices.
+Local-Echo detects spoken language automatically with the selected model. See [MODELS.md](../MODELS.md) for choices and language coverage.
