@@ -143,6 +143,14 @@ swift build -c release
 .build/release/open-wispr start
 ```
 
+To make a standalone app bundle on a build machine with `whisper-cpp` installed:
+
+```bash
+bash scripts/bundle-app.sh .build/release/open-wispr OpenWispr.app
+```
+
+The bundle includes `whisper-cli` and its runtime libraries. The selected speech model downloads on first launch and is stored separately in `~/.config/open-wispr/models/`.
+
 ## Support
 
 open-wispr is free and always will be. If you find it useful, you can [leave a tip](https://buy.stripe.com/4gM5kC2AU0Ssd4l6Hqd7q00).

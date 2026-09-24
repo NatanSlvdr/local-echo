@@ -245,6 +245,18 @@ else
     fail "App bundle missing executable"
 fi
 
+if [ -x "/tmp/OpenWisprTest.app/Contents/MacOS/whisper-cli" ]; then
+    pass "App bundle has whisper-cli"
+else
+    fail "App bundle missing whisper-cli"
+fi
+
+if codesign --verify --deep --strict /tmp/OpenWisprTest.app 2>/dev/null; then
+    pass "App bundle signature is valid"
+else
+    fail "App bundle signature is invalid"
+fi
+
 if [ -f "/tmp/OpenWisprTest.app/Contents/Info.plist" ]; then
     pass "App bundle has Info.plist"
 else

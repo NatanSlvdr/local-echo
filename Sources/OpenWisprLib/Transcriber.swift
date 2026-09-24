@@ -116,6 +116,11 @@ public class Transcriber {
     }
 
     public static func findWhisperBinary() -> String? {
+        if let executable = Bundle.main.executableURL,
+           let bundled = bundledWhisperPath(forExecutable: executable) {
+            return bundled
+        }
+
         let candidates = [
             "/opt/homebrew/bin/whisper-cli",
             "/usr/local/bin/whisper-cli",
@@ -148,6 +153,16 @@ public class Transcriber {
         }
 
         return nil
+    }
+
+    // The app bundle carries its own transcriber; source builds can still use Homebrew.
+    static func bundledWhisperPath(forExecutable executable: URL) -> String? {
+        let directory = executable.resolvingSymlinksInPath().deletingLastPathComponent()
+        let candidates = [
+            directory.appendingPathComponent("whisper-cli"),
+            directory.deletingLastPathComponent().appendingPathComponent("OpenWispr.app/Contents/MacOS/whisper-cli"),
+        ]
+        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) })?.path
     }
 
     public static func modelExists(modelSize: String) -> Bool {

@@ -3,6 +3,20 @@ import XCTest
 
 final class TranscriberTests: XCTestCase {
 
+    func testBundledWhisperIsFoundNextToAppExecutable() throws {
+        let app = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let macOS = app.appendingPathComponent("OpenWispr.app/Contents/MacOS")
+        try FileManager.default.createDirectory(at: macOS, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: app) }
+
+        let executable = macOS.appendingPathComponent("open-wispr")
+        let whisper = macOS.appendingPathComponent("whisper-cli")
+        try Data().write(to: whisper)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: whisper.path)
+
+        XCTAssertEqual(Transcriber.bundledWhisperPath(forExecutable: executable), whisper.path)
+    }
+
     func testArgumentsIncludeWhisperPromptAsSingleFollowingArgument() throws {
         let prompt = "  Use punctuation, keep product names like OpenWispr.  "
         let transcriber = Transcriber(

@@ -36,6 +36,7 @@ if [ ! -d "${TAP_DIR}" ]; then
   git clone git@github.com:human37/homebrew-open-wispr.git "${TAP_DIR}"
 fi
 git -C "${TAP_DIR}" pull --rebase
+cp "${REPO_DIR}/Formula/open-wispr.rb" "${TAP_DIR}/open-wispr.rb"
 sed -i '' "s|tag: \"v[^\"]*\"|tag: \"${TAG}\"|" "${TAP_DIR}/open-wispr.rb"
 git -C "${TAP_DIR}" add open-wispr.rb
 git -C "${TAP_DIR}" diff --cached --quiet && echo "Tap already up to date." || \

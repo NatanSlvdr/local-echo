@@ -15,7 +15,7 @@ The dev script handles everything you need to build and run from source:
 1. **Configure** -- prompts you to pick a Whisper model size (tiny through medium, English-only or multilingual), language, spoken punctuation, and hotkey. Press enter on any prompt to keep the current value from `~/.config/open-wispr/config.json`.
 2. **Clean up** -- stops any running open-wispr instances and removes the Homebrew-installed version (if present) so it doesn't conflict with your local build. Installs `whisper-cpp` via Homebrew if needed.
 3. **Build** -- runs `swift build -c release` from source.
-4. **Bundle** -- packages the binary into a macOS app bundle (`OpenWispr.app`) and copies it to `~/Applications/` so macOS properly recognizes it for accessibility and microphone permissions.
+4. **Bundle** -- packages the app, `whisper-cli`, and its linked libraries into `OpenWispr.app`, then copies it to `~/Applications/` so macOS recognizes it for accessibility and microphone permissions.
 5. **Start** -- launches the app directly so you can test immediately.
 
 ## Project structure

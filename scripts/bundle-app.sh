@@ -4,6 +4,12 @@ set -euo pipefail
 BINARY="${1:-.build/release/open-wispr}"
 APP_DIR="${2:-OpenWispr.app}"
 VERSION="${3:-0.3.0}"
+WHISPER_BINARY="${4:-$(command -v whisper-cli || true)}"
+
+if [ -z "$WHISPER_BINARY" ] || [ ! -x "$WHISPER_BINARY" ]; then
+    echo "whisper-cli not found. Install whisper-cpp on the build machine or pass its path as argument 4." >&2
+    exit 1
+fi
 
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
@@ -14,6 +20,7 @@ cp "$BINARY" "$APP_DIR/Contents/MacOS/open-wispr"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cp "$REPO_DIR/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
+python3 "$SCRIPT_DIR/bundle-whisper.py" "$WHISPER_BINARY" "$APP_DIR"
 
 cat > "$APP_DIR/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>

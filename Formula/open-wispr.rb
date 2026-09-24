@@ -4,7 +4,7 @@ class OpenWispr < Formula
   url "https://github.com/human37/open-wispr.git", tag: "v0.9.1"
   license "MIT"
 
-  depends_on "whisper-cpp"
+  depends_on "whisper-cpp" => :build
   depends_on :macos
 
   def install
@@ -44,5 +44,6 @@ class OpenWispr < Formula
 
   test do
     assert_match "open-wispr", shell_output("#{bin}/open-wispr --help")
+    assert File.executable?(prefix/"OpenWispr.app/Contents/MacOS/whisper-cli")
   end
 end
