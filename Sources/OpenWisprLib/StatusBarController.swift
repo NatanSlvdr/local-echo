@@ -83,6 +83,18 @@ class StatusBarController: NSObject {
         return f
     }()
 
+    // Keep every menu icon at a consistent size and visible in light and dark mode.
+    private func setMenuIcon(_ symbolName: String, on item: NSMenuItem) {
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
+            ?? NSImage(systemSymbolName: "circle", accessibilityDescription: nil)
+        let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        item.image = image?.withSymbolConfiguration(configuration) ?? image
+        item.image?.isTemplate = true
+        if #available(macOS 27.0, *) {
+            item.preferredImageVisibility = .visible
+        }
+    }
+
     func buildMenu() {
         menuItemTargets = []
 
@@ -90,12 +102,6 @@ class StatusBarController: NSObject {
         let hotkeyDesc = config.hotkeySummary()
 
         let menu = NSMenu()
-
-        let titleItem = NSMenuItem(title: "OpenWispr v\(OpenWispr.version)", action: nil, keyEquivalent: "")
-        titleItem.isEnabled = false
-        menu.addItem(titleItem)
-
-        menu.addItem(NSMenuItem.separator())
 
         let stateLabel: String
         if let progress = downloadProgress {
@@ -137,7 +143,21 @@ class StatusBarController: NSObject {
             stateMenuItem = stateItem
         }
 
+        let stateSymbol: String
+        switch state {
+        case .idle: stateSymbol = "waveform"
+        case .recording: stateSymbol = "mic.fill"
+        case .transcribing: stateSymbol = "waveform"
+        case .downloading: stateSymbol = "arrow.down.circle"
+        case .waitingForMicrophonePermission, .waitingForPermission: stateSymbol = "lock"
+        case .copiedToClipboard: stateSymbol = "checkmark.circle"
+        case .error: stateSymbol = "exclamationmark.triangle"
+        }
+        if let stateMenuItem { setMenuIcon(stateSymbol, on: stateMenuItem) }
+
         menu.addItem(NSMenuItem.separator())
+
+        let optionsMenu = NSMenu()
 
         let currentLang = config.language
         let langName = Config.supportedLanguages.first(where: { $0.code == currentLang })?.name ?? currentLang
@@ -175,7 +195,7 @@ class StatusBarController: NSObject {
         }
 
         langItem.submenu = langSubmenu
-        menu.addItem(langItem)
+        setMenuIcon("globe", on: langItem)
 
         let modelItem = NSMenuItem(title: "Model: \(config.modelSize)", action: nil, keyEquivalent: "")
         let modelSubmenu = NSMenu()
@@ -198,7 +218,7 @@ class StatusBarController: NSObject {
                 self?.onConfigChange?(cfg)
             }
             self.menuItemTargets.append(target)
-            let item = NSMenuItem(title: "  \(model)", action: #selector(MenuItemTarget.invoke), keyEquivalent: "")
+            let item = NSMenuItem(title: model, action: #selector(MenuItemTarget.invoke), keyEquivalent: "")
             item.target = target
             if model == config.modelSize {
                 item.state = .on
@@ -220,7 +240,7 @@ class StatusBarController: NSObject {
                 self?.onConfigChange?(cfg)
             }
             self.menuItemTargets.append(target)
-            let item = NSMenuItem(title: "  \(model)", action: #selector(MenuItemTarget.invoke), keyEquivalent: "")
+            let item = NSMenuItem(title: model, action: #selector(MenuItemTarget.invoke), keyEquivalent: "")
             item.target = target
             if model == config.modelSize {
                 item.state = .on
@@ -229,7 +249,7 @@ class StatusBarController: NSObject {
         }
 
         modelItem.submenu = modelSubmenu
-        menu.addItem(modelItem)
+        setMenuIcon("cpu", on: modelItem)
 
         let devices = AudioDeviceManager.listInputDevices()
         let selectedDevice = devices.first(where: { device in
@@ -277,9 +297,12 @@ class StatusBarController: NSObject {
         }
 
         audioItem.submenu = audioSubmenu
-        menu.addItem(audioItem)
+        setMenuIcon("mic", on: audioItem)
 
-        menu.addItem(NSMenuItem.separator())
+        optionsMenu.addItem(langItem)
+        optionsMenu.addItem(audioItem)
+        optionsMenu.addItem(modelItem)
+        optionsMenu.addItem(NSMenuItem.separator())
 
         let toggleTarget = MenuItemTarget { [weak self] in
             var cfg = Config.load()
@@ -292,7 +315,8 @@ class StatusBarController: NSObject {
         let toggleItem = NSMenuItem(title: "Toggle Mode", action: #selector(MenuItemTarget.invoke), keyEquivalent: "")
         toggleItem.target = toggleTarget
         toggleItem.state = (config.toggleMode?.value ?? false) ? .on : .off
-        menu.addItem(toggleItem)
+        setMenuIcon("hand.tap", on: toggleItem)
+        optionsMenu.addItem(toggleItem)
 
         let duckTarget = MenuItemTarget { [weak self] in
             var cfg = Config.load()
@@ -306,15 +330,15 @@ class StatusBarController: NSObject {
         duckItem.state = config.duckOtherAudioEnabled ? .on : .off
         if case .recording = state { duckItem.isEnabled = false }
         if #unavailable(macOS 14.0) { duckItem.isEnabled = false }
-        menu.addItem(duckItem)
-
-        menu.addItem(NSMenuItem.separator())
+        setMenuIcon("speaker.wave.2", on: duckItem)
+        optionsMenu.addItem(duckItem)
 
         let lastText = (NSApplication.shared.delegate as? AppDelegate)?.lastTranscription
         let copyTitle = copiedFeedback ? "Copied!" : "Copy Last Dictation"
         let copyItem = NSMenuItem(title: copyTitle, action: lastText != nil && !copiedFeedback ? #selector(copyLastTranscription) : nil, keyEquivalent: "c")
         copyItem.target = self
         if lastText == nil || copiedFeedback { copyItem.isEnabled = copiedFeedback }
+        setMenuIcon(copiedFeedback ? "checkmark" : "doc.on.doc", on: copyItem)
         menu.addItem(copyItem)
 
         if Config.effectiveMaxRecordings(config.maxRecordings) > 0 {
@@ -341,6 +365,7 @@ class StatusBarController: NSObject {
             }
 
             reprocessItem.submenu = submenu
+            setMenuIcon("clock.arrow.circlepath", on: reprocessItem)
             menu.addItem(reprocessItem)
         }
 
@@ -348,14 +373,31 @@ class StatusBarController: NSObject {
 
         let reloadItem = NSMenuItem(title: "Reload Configuration", action: #selector(reloadConfiguration), keyEquivalent: "r")
         reloadItem.target = self
-        menu.addItem(reloadItem)
+        setMenuIcon("arrow.clockwise", on: reloadItem)
 
         let openItem = NSMenuItem(title: "Open Configuration", action: #selector(openConfiguration), keyEquivalent: "o")
         openItem.target = self
-        menu.addItem(openItem)
+        setMenuIcon("doc.text", on: openItem)
+
+        optionsMenu.addItem(NSMenuItem.separator())
+        optionsMenu.addItem(openItem)
+        optionsMenu.addItem(reloadItem)
+
+        let optionsItem = NSMenuItem(title: "Options", action: nil, keyEquivalent: "")
+        optionsItem.submenu = optionsMenu
+        setMenuIcon("gearshape", on: optionsItem)
+        menu.addItem(optionsItem)
 
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+
+        let titleItem = NSMenuItem(title: "OpenWispr v\(OpenWispr.version)", action: nil, keyEquivalent: "")
+        titleItem.isEnabled = false
+        setMenuIcon("info.circle", on: titleItem)
+        menu.addItem(titleItem)
+
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        setMenuIcon("power", on: quitItem)
+        menu.addItem(quitItem)
 
         statusItem.menu = menu
     }
