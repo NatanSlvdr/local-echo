@@ -116,19 +116,6 @@ public class Transcriber {
     }
 
     public static func findWhisperBinary() -> String? {
-        let candidates = [
-            "/opt/homebrew/bin/whisper-cli",
-            "/usr/local/bin/whisper-cli",
-            "/opt/homebrew/bin/whisper-cpp",
-            "/usr/local/bin/whisper-cpp",
-        ]
-
-        for path in candidates {
-            if FileManager.default.fileExists(atPath: path) {
-                return path
-            }
-        }
-
         for name in ["whisper-cli", "whisper-cpp"] {
             let which = Process()
             which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
@@ -159,8 +146,6 @@ public class Transcriber {
 
         let candidates = [
             "\(Config.configDir.path)/models/\(modelFileName)",
-            "/opt/homebrew/share/whisper-cpp/models/\(modelFileName)",
-            "/usr/local/share/whisper-cpp/models/\(modelFileName)",
             "\(FileManager.default.homeDirectoryForCurrentUser.path)/.cache/whisper/\(modelFileName)",
         ]
 
@@ -182,7 +167,7 @@ enum TranscriberError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .whisperNotFound:
-            return "whisper-cpp not found. Install it with: brew install whisper-cpp"
+            return "whisper-cli not found. Build whisper.cpp and add whisper-cli to PATH."
         case .modelNotFound(let size):
             return "Whisper model '\(size)' not found. Download it with: open-wispr download-model \(size)"
         case .transcriptionFailed:

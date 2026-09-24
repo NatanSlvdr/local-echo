@@ -7,15 +7,17 @@
 
 <p align="center">Powered by <a href="https://github.com/ggml-org/whisper.cpp">whisper.cpp</a> with Metal acceleration on Apple Silicon.</p>
 
-## Install
+## Run from source
+
+OpenWispr requires macOS 13 or later, the Xcode Command Line Tools, and a `whisper-cli` executable on your `PATH`. Build `whisper-cli` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp) using its source build instructions. The app downloads its speech model on first run.
+
+From a checkout of this repository, run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/human37/open-wispr/main/scripts/install.sh | bash
+bash scripts/dev.sh
 ```
 
-The script handles everything: installs via Homebrew, walks you through granting permissions, downloads the Whisper model, and starts the service. You'll see live feedback as each step completes.
-
-> **Note:** Recent versions of Homebrew (6.0+) have tightened security around third-party taps, so you may be asked to trust this package before it installs. If that happens, the installer prints the exact `brew trust` command to run.
+This builds a signed `OpenWispr.app` in the checkout and starts it in the foreground. Keep the terminal open while using it; press Ctrl-C to stop it.
 
 A waveform icon appears in your menu bar when it's running.
 
@@ -23,15 +25,7 @@ The default hotkey is the **Globe key** (🌐, bottom-left). Hold it, speak, rel
 
 On macOS 14 and later, OpenWispr uses native voice processing to reduce playback volume during recording. Playback returns to normal when recording stops.
 
-> **[Full installation guide](docs/install-guide.md)** — permissions walkthrough with screenshots, non-English macOS instructions, and troubleshooting.
-
-## Uninstall
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/human37/open-wispr/main/scripts/uninstall.sh | bash
-```
-
-This stops the service, removes the formula, tap, config, models, app bundle, logs, and permissions.
+> **[Setup and permissions guide](docs/install-guide.md)** — permission walkthrough, non-English macOS instructions, and troubleshooting.
 
 ## Configuration
 
@@ -49,7 +43,7 @@ Edit `~/.config/open-wispr/config.json`:
 }
 ```
 
-Then restart: `brew services restart open-wispr`
+Restart the app after editing the file: press Ctrl-C in its terminal, then run `bash scripts/dev.sh` again.
 
 To bind multiple hotkeys, use the `hotkeys` array instead:
 
@@ -133,10 +127,12 @@ See what's planned and in progress on the [public roadmap](https://github.com/us
 ```bash
 git clone https://github.com/human37/open-wispr.git
 cd open-wispr
-brew install whisper-cpp
 swift build -c release
-.build/release/open-wispr start
+bash scripts/bundle-app.sh .build/release/open-wispr OpenWispr.app dev
+OpenWispr.app/Contents/MacOS/open-wispr start
 ```
+
+Build `whisper-cli` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and add it to `PATH` before starting the app. The bundled executable gives macOS a stable app identity for Microphone and Accessibility permissions.
 
 ## Support
 

@@ -20,7 +20,7 @@ for name in whisper-cli whisper-cpp; do
 done
 
 if [ -z "$WHISPER_BIN" ]; then
-    echo "SKIP: whisper-cpp not installed (brew install whisper-cpp)"
+    echo "SKIP: whisper-cli not found on PATH"
     exit 0
 fi
 pass "whisper binary found: $WHISPER_BIN"
@@ -32,8 +32,6 @@ MODEL_PATH=""
 
 for dir in \
     "$HOME/.config/open-wispr/models" \
-    "/opt/homebrew/share/whisper-cpp/models" \
-    "/usr/local/share/whisper-cpp/models" \
     "$HOME/.cache/whisper"; do
     if [ -f "$dir/$MODEL_FILE" ]; then
         MODEL_PATH="$dir/$MODEL_FILE"
