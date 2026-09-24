@@ -12,14 +12,14 @@ From a checkout of this repository:
 bash scripts/dev.sh
 ```
 
-The script builds and signs `~/Library/Application Support/OpenWispr/dev/OpenWispr.app`, then starts it through macOS. Keep the terminal open while using the app, and choose **Quit** from the menu bar to stop it. Logs are written to `~/.config/open-wispr/dev.log`. On first run, OpenWispr downloads its default speech model to `~/.config/open-wispr/models/`.
+The script builds and signs `~/Library/Application Support/OpenWispr/dev/OpenWispr.app`, then starts it through macOS. The app keeps running after the command returns; choose **Quit** from the menu bar to stop it before rebuilding. Logs are written to `~/.config/open-wispr/dev.log`. On first run, OpenWispr downloads its default speech model to `~/.config/open-wispr/models/`.
 
 To inspect the configuration or change it, use the built CLI:
 
 ```bash
-.build/release/open-wispr status
-.build/release/open-wispr set-hotkey f5
-.build/release/open-wispr set-model small.en
+.build/debug/open-wispr status
+.build/debug/open-wispr set-hotkey f5
+.build/debug/open-wispr set-model small.en
 ```
 
 Restart the app after changing settings.

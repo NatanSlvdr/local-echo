@@ -6,7 +6,9 @@ OpenWispr is a macOS Swift app. Install the Xcode Command Line Tools and CMake, 
 bash scripts/dev.sh
 ```
 
-The script builds `whisper-cli` from source, builds and signs `/tmp/OpenWispr.app` with it, then starts the app in the foreground. See the [setup guide](docs/install-guide.md) for permissions and troubleshooting.
+The script builds `whisper-cli` when needed, builds and signs `~/Library/Application Support/OpenWispr/dev/OpenWispr.app`, then launches it through macOS. The app keeps running after the script exits; quit it from the menu bar before rebuilding. See the [setup guide](docs/install-guide.md) for permissions and troubleshooting.
+
+Use `bash scripts/dev.sh release` to check an optimized build through the same app packaging and launch path. If you edit the pinned `whisper.cpp` checkout, run `bash scripts/build-whisper.sh --force` before the next dev build.
 
 ## Project structure
 
@@ -31,6 +33,8 @@ bash scripts/test-transcription.sh
 ```
 
 That script generates test audio with macOS speech tools and downloads the small `tiny.en` model if needed. Add focused unit tests for new logic and integration coverage when changing the transcription pipeline.
+
+For changes to audio, permissions, hotkeys, or text insertion, use the signed app for a short real use check: launch it, grant permissions if prompted, dictate into another app, confirm text appears at the cursor, then quit and relaunch it. Also check the affected input device or menu setting. For model download changes, check a first launch without that model. Use the release mode before sharing a build.
 
 ## Making changes
 

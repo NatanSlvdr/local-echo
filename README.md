@@ -21,7 +21,9 @@ From a checkout of this repository, run:
 bash scripts/dev.sh
 ```
 
-This builds a signed app at `~/Library/Application Support/OpenWispr/dev/OpenWispr.app` containing `whisper-cli` and launches it through macOS. The script waits until you choose **Quit** from the menu bar. Logs are written to `~/.config/open-wispr/dev.log`. The finished app runs without a separate `whisper-cli` installation. The Swift build script calls `swiftc` directly, so it also works with Command Line Tools installations where Swift Package Manager cannot load manifests.
+This builds a signed app at `~/Library/Application Support/OpenWispr/dev/OpenWispr.app` containing `whisper-cli` and launches it through macOS. The app keeps running after the command returns; choose **Quit** from the menu bar before rebuilding. Logs are written to `~/.config/open-wispr/dev.log`. The finished app runs without a separate `whisper-cli` installation. The Swift build script calls `swiftc` directly, so it also works with Command Line Tools installations where Swift Package Manager cannot load manifests.
+
+The default Swift build uses debug symbols and skips optimization for faster iteration. `whisper-cli` is reused until its pinned version or build recipe changes; run `bash scripts/build-whisper.sh --force` after editing its source. To check the optimized build through the same signed app workflow, quit the app and run `bash scripts/dev.sh release`.
 
 When an Apple Development signing identity is available, the dev script uses it so macOS can keep the app's microphone permission across rebuilds. Otherwise the app is signed locally and macOS may ask for permission again after a rebuild.
 
@@ -136,7 +138,7 @@ See what's planned and in progress on the [public roadmap](https://github.com/us
 git clone https://github.com/NatanSlvdr/local-echo.git
 cd local-echo
 bash scripts/build-whisper.sh
-bash scripts/build-swift.sh
+bash scripts/build-swift.sh release
 APP_DIR="$HOME/Library/Application Support/OpenWispr/dev/OpenWispr.app"
 bash scripts/bundle-app.sh .build/release/open-wispr "$APP_DIR" dev
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DIR"

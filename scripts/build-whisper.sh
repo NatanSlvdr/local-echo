@@ -4,6 +4,21 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WHISPER_TAG="v1.9.4"
 WHISPER_DIR="$REPO_DIR/.build/whisper.cpp-$WHISPER_TAG"
+WHISPER_BINARY="$REPO_DIR/.build/whisper-cli"
+CACHE_STAMP="$REPO_DIR/.build/whisper-cli.cache-key"
+
+if [ "${1:-}" != "" ] && [ "$1" != "--force" ]; then
+    echo "Usage: bash scripts/build-whisper.sh [--force]" >&2
+    exit 2
+fi
+
+# Rebuild when the pinned version, architecture, or build recipe changes.
+CACHE_KEY="$WHISPER_TAG-$(uname -m)-$(shasum -a 256 "$0" | awk '{print $1}')"
+if [ "${1:-}" != "--force" ] && [ -x "$WHISPER_BINARY" ] &&
+   [ -f "$CACHE_STAMP" ] && [ "$(cat "$CACHE_STAMP")" = "$CACHE_KEY" ]; then
+    echo "Using cached $WHISPER_BINARY"
+    exit 0
+fi
 
 if ! command -v cmake >/dev/null 2>&1; then
     echo "CMake is required to build whisper-cli." >&2
@@ -11,6 +26,7 @@ if ! command -v cmake >/dev/null 2>&1; then
 fi
 
 mkdir -p "$REPO_DIR/.build"
+rm -f "$CACHE_STAMP"
 if [ ! -d "$WHISPER_DIR/.git" ]; then
     git clone --depth 1 --branch "$WHISPER_TAG" https://github.com/ggml-org/whisper.cpp.git "$WHISPER_DIR"
 fi
@@ -26,6 +42,7 @@ CMAKE_POLICY_VERSION_MINIMUM=3.10 cmake -S "$WHISPER_DIR" -B "$WHISPER_DIR/build
     -DGGML_METAL_EMBED_LIBRARY=ON \
     -DWHISPER_BUILD_TESTS=OFF
 cmake --build "$WHISPER_DIR/build" --target whisper-cli --parallel
-cp "$WHISPER_DIR/build/bin/whisper-cli" "$REPO_DIR/.build/whisper-cli"
+cp "$WHISPER_DIR/build/bin/whisper-cli" "$WHISPER_BINARY"
+printf '%s\n' "$CACHE_KEY" > "$CACHE_STAMP"
 
-echo "Built $REPO_DIR/.build/whisper-cli"
+echo "Built $WHISPER_BINARY"
