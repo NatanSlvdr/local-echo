@@ -160,7 +160,7 @@ func cmdStatus() {
     print("Hotkey:      \(hotkeyDesc)")
     print("Model:       \(config.modelSize)")
     print("Model ready: \(Transcriber.modelExists(modelSize: config.modelSize) ? "yes" : "no")")
-    print("whisper-cpp: \(Transcriber.findWhisperBinary() != nil ? "yes" : "no")")
+    print("Whisper CLI: \(Transcriber.findWhisperBinary() != nil ? "yes" : "no")")
     let langName = Config.supportedLanguages.first(where: { $0.code == config.language })?.name ?? config.language
     print("Language:    \(langName) (\(config.language))")
     let toggleMode = config.toggleMode?.value ?? false

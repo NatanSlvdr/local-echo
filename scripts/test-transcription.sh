@@ -10,17 +10,18 @@ fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }
 echo "open-wispr transcription integration tests"
 echo "--------------------------------------------"
 
-# Check whisper-cli is installed
+# Prefer the packaged executable when an app bundle has been built.
 WHISPER_BIN=""
-for name in whisper-cli whisper-cpp; do
-    if command -v "$name" &>/dev/null; then
-        WHISPER_BIN="$name"
-        break
-    fi
-done
+if [ -x "OpenWispr.app/Contents/MacOS/whisper-cli" ]; then
+    WHISPER_BIN="OpenWispr.app/Contents/MacOS/whisper-cli"
+elif [ -x ".build/whisper-cli" ]; then
+    WHISPER_BIN=".build/whisper-cli"
+elif command -v whisper-cli &>/dev/null; then
+    WHISPER_BIN="$(command -v whisper-cli)"
+fi
 
 if [ -z "$WHISPER_BIN" ]; then
-    echo "SKIP: whisper-cpp not installed (brew install whisper-cpp)"
+    echo "SKIP: whisper-cli not found on PATH"
     exit 0
 fi
 pass "whisper binary found: $WHISPER_BIN"
@@ -32,8 +33,6 @@ MODEL_PATH=""
 
 for dir in \
     "$HOME/.config/open-wispr/models" \
-    "/opt/homebrew/share/whisper-cpp/models" \
-    "/usr/local/share/whisper-cpp/models" \
     "$HOME/.cache/whisper"; do
     if [ -f "$dir/$MODEL_FILE" ]; then
         MODEL_PATH="$dir/$MODEL_FILE"
@@ -89,10 +88,10 @@ fi
 # Test 3: Transcriber class via the built binary
 BIN=".build/release/open-wispr"
 if [ -x "$BIN" ]; then
-    if $BIN status 2>&1 | grep -q "whisper-cpp: yes"; then
-        pass "Binary detects whisper-cpp"
+    if $BIN status 2>&1 | grep -q "Whisper CLI: yes"; then
+        pass "Binary detects whisper-cli"
     else
-        fail "Binary should detect whisper-cpp"
+        fail "Binary should detect whisper-cli"
     fi
 fi
 

@@ -48,7 +48,7 @@ public class Transcriber {
 
         if process.terminationStatus != 0 {
             let stderr = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !stderr.isEmpty { fputs("whisper-cpp: \(stderr)\n", Foundation.stderr) }
+            if !stderr.isEmpty { fputs("whisper-cli: \(stderr)\n", Foundation.stderr) }
             throw TranscriberError.transcriptionFailed
         }
 
@@ -121,41 +121,26 @@ public class Transcriber {
             return bundled
         }
 
-        let candidates = [
-            "/opt/homebrew/bin/whisper-cli",
-            "/usr/local/bin/whisper-cli",
-            "/opt/homebrew/bin/whisper-cpp",
-            "/usr/local/bin/whisper-cpp",
-        ]
+        let which = Process()
+        which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        which.arguments = ["whisper-cli"]
+        let pipe = Pipe()
+        which.standardOutput = pipe
+        which.standardError = Pipe()
+        try? which.run()
+        which.waitUntilExit()
 
-        for path in candidates {
-            if FileManager.default.fileExists(atPath: path) {
-                return path
-            }
-        }
+        let result = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        for name in ["whisper-cli", "whisper-cpp"] {
-            let which = Process()
-            which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-            which.arguments = [name]
-            let pipe = Pipe()
-            which.standardOutput = pipe
-            which.standardError = Pipe()
-            try? which.run()
-            which.waitUntilExit()
-
-            let result = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if let result = result, !result.isEmpty {
-                return result
-            }
+        if let result, !result.isEmpty {
+            return result
         }
 
         return nil
     }
 
-    // The app bundle carries its own transcriber; source builds can still use Homebrew.
+    // The app bundle carries its own transcriber; source builds can use PATH.
     static func bundledWhisperPath(forExecutable executable: URL) -> String? {
         let directory = executable.resolvingSymlinksInPath().deletingLastPathComponent()
         let candidates = [
@@ -174,8 +159,6 @@ public class Transcriber {
 
         let candidates = [
             "\(Config.configDir.path)/models/\(modelFileName)",
-            "/opt/homebrew/share/whisper-cpp/models/\(modelFileName)",
-            "/usr/local/share/whisper-cpp/models/\(modelFileName)",
             "\(FileManager.default.homeDirectoryForCurrentUser.path)/.cache/whisper/\(modelFileName)",
         ]
 
@@ -197,7 +180,7 @@ enum TranscriberError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .whisperNotFound:
-            return "whisper-cpp not found. Install it with: brew install whisper-cpp"
+            return "whisper-cli not found. Rebuild OpenWispr.app with whisper-cli on PATH."
         case .modelNotFound(let size):
             return "Whisper model '\(size)' not found. Download it with: open-wispr download-model \(size)"
         case .transcriptionFailed:

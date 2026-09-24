@@ -4,10 +4,21 @@ set -euo pipefail
 BINARY="${1:-.build/release/open-wispr}"
 APP_DIR="${2:-OpenWispr.app}"
 VERSION="${3:-0.3.0}"
-WHISPER_BINARY="${4:-$(command -v whisper-cli || true)}"
+WHISPER_BINARY="${4:-.build/whisper-cli}"
+if [ ! -x "$WHISPER_BINARY" ] && [ "$#" -lt 4 ]; then
+    WHISPER_BINARY="$(command -v whisper-cli || true)"
+fi
 
 if [ -z "$WHISPER_BINARY" ] || [ ! -x "$WHISPER_BINARY" ]; then
-    echo "whisper-cli not found. Install whisper-cpp on the build machine or pass its path as argument 4." >&2
+    echo "whisper-cli not found. Run scripts/build-whisper.sh or pass its path as argument 4." >&2
+    exit 1
+fi
+
+# A static build keeps the app independent of third-party runtime libraries.
+EXTERNAL_LIBRARIES="$(otool -L "$WHISPER_BINARY" | awk 'NR > 1 && $1 !~ /^\/usr\/lib\// && $1 !~ /^\/System\/Library\// { print $1 }')"
+if [ -n "$EXTERNAL_LIBRARIES" ]; then
+    echo "whisper-cli has external libraries; rebuild it with scripts/build-whisper.sh:" >&2
+    echo "$EXTERNAL_LIBRARIES" >&2
     exit 1
 fi
 
@@ -16,11 +27,13 @@ mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
 cp "$BINARY" "$APP_DIR/Contents/MacOS/open-wispr"
+cp "$WHISPER_BINARY" "$APP_DIR/Contents/MacOS/whisper-cli"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cp "$REPO_DIR/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
-python3 "$SCRIPT_DIR/bundle-whisper.py" "$WHISPER_BINARY" "$APP_DIR"
+mkdir -p "$APP_DIR/Contents/Resources/Licenses"
+cp "$REPO_DIR/Resources/WhisperLicense.txt" "$APP_DIR/Contents/Resources/Licenses/whisper.cpp.txt"
 
 cat > "$APP_DIR/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -53,6 +66,7 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
 </plist>
 PLIST
 
+codesign --force --sign - "$APP_DIR/Contents/MacOS/whisper-cli"
 codesign --force --sign - --identifier com.human37.open-wispr "$APP_DIR"
 
 echo "Built $APP_DIR"

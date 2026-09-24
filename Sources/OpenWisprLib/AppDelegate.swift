@@ -60,7 +60,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if Transcriber.findWhisperBinary() == nil {
-            print("Error: whisper-cpp not found. Install it with: brew install whisper-cpp")
+            print("Error: whisper-cli not found. Rebuild OpenWispr.app with whisper-cli on PATH.")
             return
         }
 
