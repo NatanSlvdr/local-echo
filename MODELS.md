@@ -1,6 +1,8 @@
 # Models
 
-Local-Echo offers four speech models. Choose one in **Options → Model** or with `local-echo set-model <id>`. The selected model downloads on first use. Each loaded model stays in memory for 15 minutes after its last use, then unloads automatically.
+Local-Echo offers four speech models. Choose one in **Options → Transcription** or with `local-echo set-model <id>`. The selected model downloads on first use. Each loaded model stays in memory for 15 minutes after its last use, then unloads automatically.
+
+The settings window groups them by approximate download size: **lightweight** (under 1 GB), **medium** (1–1.5 GB), and **heavy** (over 1.5 GB). Each selectable row shows its name, size, and whether it is already downloaded.
 
 | Choice | ID | Download | Reference speed | Notes |
 |---|---|---:|---:|---|
@@ -11,6 +13,6 @@ Local-Echo offers four speech models. Choose one in **Options → Model** or wit
 
 Speed figures are model publisher benchmarks, not guarantees for this app or your Mac. The Parakeet figure excludes model loading. The Qwen models and Parakeet run on Apple Silicon through an isolated Python MLX environment. The app installs that environment on first use using bundled `uv`. Turbo uses a persistent local `whisper-server`. Audio and transcript processing stay on your Mac.
 
-The cleanup stage runs after transcription and spoken punctuation processing. Its only model is [`qwen35-08b-qat-q4`](https://huggingface.co/YoozLabs/Qwen3.5-0.8B-qat-lean-4bit-mlx), a ~500 MB Qwen3.5 0.8B QAT Q4 model. Cleanup is enabled by default and can be switched **Off** in Options or with `local-echo set-cleanup off`. It corrects punctuation, capitalization, spacing, and obvious recognition errors while aiming to preserve meaning. Generated edits can still be wrong, so check important dictation.
+The cleanup stage runs after transcription and spoken punctuation processing. Its only model is [`qwen35-08b-qat-q4`](https://huggingface.co/YoozLabs/Qwen3.5-0.8B-qat-lean-4bit-mlx), a ~500 MB Qwen3.5 0.8B QAT Q4 model. Cleanup is enabled by default and can be switched off in **Options → Nettoyage du texte** or with `local-echo set-cleanup off`. It corrects punctuation, capitalization, spacing, and obvious recognition errors while aiming to preserve meaning. Generated edits can still be wrong, so check important dictation.
 
 The app stores MLX checkpoints under `~/.config/local-echo/models/` and its Python environment under `~/.config/local-echo/runtime/`. Existing `medium`, `large-v3`, and other removed selections move to `large-v3-turbo` when the configuration loads. Previously downloaded files are left on disk.

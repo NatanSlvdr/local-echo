@@ -1,6 +1,25 @@
 import AppKit
 import Foundation
 
+// Prevents shortcut recording in Settings from activating the current dictation hotkey.
+final class ShortcutCaptureGate: @unchecked Sendable {
+    static let shared = ShortcutCaptureGate()
+    private let lock = NSLock()
+    private var active = false
+
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return active
+    }
+
+    func setActive(_ value: Bool) {
+        lock.lock()
+        active = value
+        lock.unlock()
+    }
+}
+
 class HotkeyManager {
     typealias GlobalMonitorInstaller = (NSEvent.EventTypeMask, @escaping (NSEvent) -> Void) -> Any?
     typealias LocalMonitorInstaller = (NSEvent.EventTypeMask, @escaping (NSEvent) -> NSEvent?) -> Any?
@@ -15,6 +34,7 @@ class HotkeyManager {
     private var onKeyDown: (() -> Void)?
     private var onKeyUp: (() -> Void)?
     private var modifierPressed = false
+    private var keyPressed = false
 
     init(
         keyCode: UInt16,
@@ -58,9 +78,12 @@ class HotkeyManager {
         }
         globalMonitor = nil
         localMonitor = nil
+        modifierPressed = false
+        keyPressed = false
     }
 
     private func handleEvent(_ event: NSEvent) {
+        guard !ShortcutCaptureGate.shared.isActive else { return }
         if isModifierOnlyKey(keyCode) {
             guard event.type == .flagsChanged else { return }
             guard event.keyCode == keyCode else { return }
@@ -78,13 +101,16 @@ class HotkeyManager {
             }
         } else {
             guard event.keyCode == keyCode else { return }
-            if requiredModifiers != 0 {
-                let currentMods = UInt64(event.modifierFlags.rawValue) & 0x00FF0000
-                guard currentMods & requiredModifiers == requiredModifiers else { return }
-            }
             if event.type == .keyDown {
+                guard !keyPressed else { return }
+                if requiredModifiers != 0 {
+                    let currentMods = UInt64(event.modifierFlags.rawValue) & 0x00FF0000
+                    guard currentMods & requiredModifiers == requiredModifiers else { return }
+                }
+                keyPressed = true
                 onKeyDown?()
-            } else if event.type == .keyUp {
+            } else if event.type == .keyUp, keyPressed {
+                keyPressed = false
                 onKeyUp?()
             }
         }

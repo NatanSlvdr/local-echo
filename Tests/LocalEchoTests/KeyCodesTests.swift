@@ -37,6 +37,12 @@ final class KeyCodesTests: XCTestCase {
         XCTAssertEqual(KeyCodes.nameToCode["fn"], KeyCodes.nameToCode["globe"])
     }
 
+    func testFnCanBeUsedAsPartOfAChord() {
+        let hotkey = HotkeyConfig(keyCode: 49, modifiers: ["fn", "cmd"])
+        XCTAssertNotEqual(hotkey.modifierFlags & UInt64(1 << 23), 0)
+        XCTAssertNotEqual(hotkey.modifierFlags & UInt64(1 << 20), 0)
+    }
+
     // MARK: - codeToName
 
     func testCodeToNameRoundTripsKnownKeys() {

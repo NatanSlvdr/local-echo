@@ -54,7 +54,7 @@ If you used the previous app name, Local-Echo copies your existing settings into
 }
 ```
 
-After editing the file, choose **Options... → Reload Configuration** from the menu bar app.
+After editing the file, choose **Options... → Avancé → Recharger la configuration** from the menu bar app.
 
 To bind multiple hotkeys, use the `hotkeys` array instead:
 
@@ -73,7 +73,7 @@ Both `hotkey` (single) and `hotkeys` (array) are supported. If both are present,
 |---|---|---|
 | **hotkey** | `63` | Globe (`63`), Right Option (`61`), F5 (`96`), or any key code |
 | **hotkeys** | — | Array of hotkey objects — bind multiple keys to trigger dictation |
-| **modifiers** | `[]` | `"cmd"`, `"ctrl"`, `"shift"`, `"opt"` — combine for chords |
+| **modifiers** | `[]` | `"cmd"`, `"ctrl"`, `"shift"`, `"opt"`, `"fn"` — combine for chords |
 | **modelSize** | `"large-v3-turbo"` | `large-v3-turbo`, `qwen3-asr-1.7b-8bit`, `parakeet-tdt-v3-mixed`, or `qwen3-asr-1.7b-4bit` |
 | **cleanupModel** | `"qwen35-08b-qat-q4"` | This Qwen3.5 cleanup model, or `"off"` |
 | **spokenPunctuation** | `false` | Say "comma", "period", etc. to insert punctuation instead of auto-punctuation |
@@ -102,7 +102,7 @@ Click the waveform icon for status and options. **Recent Recordings** lists your
 
 Click the menu bar icon to access **Copy Last Dictation** — recovers your most recent transcription if you dictated without a text field focused.
 
-Choose **Options...** to open the settings window. It contains the speech model, cleanup, and microphone selectors, recording switches, and buttons to open or reload the configuration file.
+Choose **Options...** to open the native settings window. **Général** shows the current choices and useful dictation tips. **Transcription** groups the four supported models by download size; each selectable row shows the model name, weight, and download status. **Nettoyage du texte** has the same simple selector and an on/off switch. In **Contrôles**, click the shortcut and press a key or key combination, then choose whether to hold it or press it to start and stop. **Avancé** opens or reveals the configuration file and can restore default settings after confirmation. The settings sidebar stays visible.
 
 ## Compare
 

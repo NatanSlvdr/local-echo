@@ -240,6 +240,7 @@ public struct HotkeyConfig: Codable, Equatable, Sendable {
             case "shift": flags |= UInt64(1 << 17)
             case "ctrl", "control": flags |= UInt64(1 << 18)
             case "opt", "option", "alt": flags |= UInt64(1 << 19)
+            case "fn", "globe": flags |= UInt64(1 << 23)
             default: break
             }
         }

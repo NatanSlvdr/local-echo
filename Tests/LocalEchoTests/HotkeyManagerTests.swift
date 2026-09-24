@@ -52,11 +52,53 @@ final class HotkeyManagerTests: XCTestCase {
         XCTAssertTrue(removedTokens.contains { $0 === localToken })
     }
 
-    private func makeKeyEvent(type: NSEvent.EventType, keyCode: UInt16) -> NSEvent? {
+    func testChordStopsWhenModifiersAreReleasedBeforeMainKey() throws {
+        var handler: ((NSEvent) -> Void)?
+        var starts = 0
+        var stops = 0
+        let manager = HotkeyManager(
+            keyCode: 49,
+            modifiers: UInt64(NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.shift.rawValue),
+            addGlobalMonitor: { _, callback in handler = callback; return NSObject() },
+            addLocalMonitor: { _, _ in nil },
+            removeMonitor: { _ in }
+        )
+        manager.start(onKeyDown: { starts += 1 }, onKeyUp: { stops += 1 })
+
+        handler?(try XCTUnwrap(makeKeyEvent(type: .keyDown, keyCode: 49, flags: [.command, .shift])))
+        handler?(try XCTUnwrap(makeKeyEvent(type: .keyUp, keyCode: 49)))
+
+        XCTAssertEqual(starts, 1)
+        XCTAssertEqual(stops, 1)
+        manager.stop()
+    }
+
+    func testShortcutCaptureSuppressesExistingHotkey() throws {
+        var handler: ((NSEvent) -> Void)?
+        var starts = 0
+        let manager = HotkeyManager(
+            keyCode: 49,
+            addGlobalMonitor: { _, callback in handler = callback; return NSObject() },
+            addLocalMonitor: { _, _ in nil },
+            removeMonitor: { _ in }
+        )
+        manager.start(onKeyDown: { starts += 1 }, onKeyUp: {})
+        ShortcutCaptureGate.shared.setActive(true)
+        defer {
+            ShortcutCaptureGate.shared.setActive(false)
+            manager.stop()
+        }
+
+        handler?(try XCTUnwrap(makeKeyEvent(type: .keyDown, keyCode: 49)))
+        XCTAssertEqual(starts, 0)
+    }
+
+    private func makeKeyEvent(type: NSEvent.EventType, keyCode: UInt16,
+                              flags: NSEvent.ModifierFlags = []) -> NSEvent? {
         NSEvent.keyEvent(
             with: type,
             location: .zero,
-            modifierFlags: [],
+            modifierFlags: flags,
             timestamp: 0,
             windowNumber: 0,
             context: nil,
