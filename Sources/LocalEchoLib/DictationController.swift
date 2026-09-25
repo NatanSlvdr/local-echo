@@ -73,6 +73,7 @@ final class DictationController {
                 : RecordingStore.newRecordingURL()
             try recorder.startRecording(to: outputURL)
             currentRecordingURL = outputURL
+            TranscriptionJob(config: config).warmUp()
             statusBar.buildMenu()
         } catch {
             print("Error: \(error.localizedDescription)")

@@ -7,6 +7,8 @@ final class ModelSession {
     private var input: Pipe?
     private var output: Pipe?
     private var port: UInt16?
+    /// Bytes read from the worker after the last complete message.
+    private var pending = Data()
     var isRunning: Bool { process.isRunning }
 
     init(model: ModelCatalog.Model) throws {
@@ -44,7 +46,10 @@ final class ModelSession {
                 stop()
                 throw error
             }
-            guard ready["ready"] as? Bool == true else { throw ModelRuntimeError.workerFailed("Model did not become ready") }
+            guard ready["ready"] as? Bool == true else {
+                stop()
+                throw ModelRuntimeError.workerFailed("Model did not become ready")
+            }
         }
     }
 
@@ -54,36 +59,47 @@ final class ModelSession {
         }
         guard let input, process.isRunning else { throw ModelRuntimeError.workerFailed("Model worker stopped") }
         let data = try JSONSerialization.data(withJSONObject: values)
-        input.fileHandleForWriting.write(data + Data([0x0a]))
+        try input.fileHandleForWriting.write(contentsOf: data + Data([0x0a]))
         let response = try readMessage()
         if let error = response["error"] as? String { throw ModelRuntimeError.workerFailed(error) }
         guard let text = response["text"] as? String else { throw ModelRuntimeError.workerFailed("Invalid model response") }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func stop() {
+    /// Ends the process. Safe to call from another thread while a request waits for a response.
+    func terminate() {
         if process.isRunning {
             process.terminate()
             process.waitUntilExit()
         }
+    }
+
+    func stop() {
+        terminate()
         input?.fileHandleForWriting.closeFile()
         output?.fileHandleForReading.closeFile()
     }
 
+    /// Reads one JSON line, taking whatever the pipe has available instead of one byte per read.
     private func readMessage() throws -> [String: Any] {
-        guard let handle = output?.fileHandleForReading else { throw ModelRuntimeError.workerFailed("No model response") }
-        var data = Data()
+        guard let descriptor = output?.fileHandleForReading.fileDescriptor else {
+            throw ModelRuntimeError.workerFailed("No model response")
+        }
+        var chunk = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
-            guard let byte = try handle.read(upToCount: 1), !byte.isEmpty else {
-                throw ModelRuntimeError.workerFailed("Model worker exited")
+            if let newline = pending.firstIndex(of: 0x0a) {
+                let line = pending[pending.startIndex..<newline]
+                pending.removeSubrange(pending.startIndex...newline)
+                guard let object = try JSONSerialization.jsonObject(with: line) as? [String: Any] else {
+                    throw ModelRuntimeError.workerFailed("Invalid model response")
+                }
+                return object
             }
-            if byte[0] == 0x0a { break }
-            data.append(byte)
+            let count = read(descriptor, &chunk, chunk.count)
+            if count < 0 && errno == EINTR { continue }
+            guard count > 0 else { throw ModelRuntimeError.workerFailed("Model worker exited") }
+            pending.append(contentsOf: chunk[..<count])
         }
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw ModelRuntimeError.workerFailed("Invalid model response")
-        }
-        return object
     }
 
     private func waitForServer(port: UInt16) throws {

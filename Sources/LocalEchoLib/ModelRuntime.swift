@@ -2,13 +2,22 @@ import Darwin
 import Foundation
 
 /// Installs the Python MLX runtime and keeps each loaded model alive for 15 idle minutes.
+/// Each model has its own lock, so loading or running one model never waits for another.
 public final class ModelRuntime: @unchecked Sendable {
     public static let shared = ModelRuntime()
     public static let idleTimeout: TimeInterval = 15 * 60
 
-    private let lock = NSRecursiveLock()
-    private var sessions: [String: ModelSession] = [:]
-    private var generations: [String: Int] = [:]
+    /// `lock` serializes loading and requests for one model. `session` and `generation` are guarded by the runtime lock.
+    private final class Slot: @unchecked Sendable {
+        let lock = NSLock()
+        var session: ModelSession?
+        var generation = 0
+    }
+
+    private let lock = NSLock()
+    private var slots: [String: Slot] = [:]
+    /// Incremented by `stopAll`, so a session that finishes loading afterwards is discarded.
+    private var epoch = 0
 
     private init() {}
 
@@ -23,44 +32,111 @@ public final class ModelRuntime: @unchecked Sendable {
         return try use(model: ModelCatalog.cleanup, request: request, prompt: nil)
     }
 
-    private func use(model: ModelCatalog.Model, request: [String: String], prompt: String?) throws -> String {
-        lock.lock()
-        defer { lock.unlock() }
-        let session: ModelSession
-        if let current = sessions[model.id], current.isRunning {
-            session = current
-        } else {
-            session = try ModelSession(model: model)
-            sessions[model.id] = session
+    /// Starts an installed model in the background so the next request does not wait for it to load.
+    public func warmUp(_ model: ModelCatalog.Model) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard model.isInstalled else { return }
+            let slot = self.slot(for: model.id)
+            slot.lock.lock()
+            defer { slot.lock.unlock() }
+            do {
+                _ = try self.runningSession(for: model, in: slot)
+                self.scheduleExpiry(of: slot)
+            } catch {
+                fputs("Could not preload \(model.id): \(error.localizedDescription)\n", stderr)
+            }
         }
+    }
+
+    /// Stops every model process without waiting for requests in progress; those requests fail.
+    public func stopAll() {
+        lock.lock()
+        epoch += 1
+        let sessions = slots.values.compactMap(\.session)
+        for slot in slots.values {
+            slot.session = nil
+            slot.generation += 1
+        }
+        lock.unlock()
+        for session in sessions { session.terminate() }
+    }
+
+    private func use(model: ModelCatalog.Model, request: [String: String], prompt: String?) throws -> String {
+        let slot = slot(for: model.id)
+        slot.lock.lock()
+        defer { slot.lock.unlock() }
+        let session = try runningSession(for: model, in: slot)
         do {
             let result = try session.request(request, prompt: prompt)
-            let generation = (generations[model.id] ?? 0) + 1
-            generations[model.id] = generation
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.idleTimeout) { [weak self] in
-                self?.expire(modelID: model.id, generation: generation)
-            }
+            scheduleExpiry(of: slot)
             return result
         } catch {
-            session.stop()
-            sessions.removeValue(forKey: model.id)
+            discard(session, from: slot)
             throw error
         }
     }
 
-    private func expire(modelID: String, generation: Int) {
+    private func slot(for modelID: String) -> Slot {
         lock.lock()
         defer { lock.unlock() }
-        guard generations[modelID] == generation else { return }
-        sessions.removeValue(forKey: modelID)?.stop()
+        if let slot = slots[modelID] { return slot }
+        let slot = Slot()
+        slots[modelID] = slot
+        return slot
     }
 
-    public func stopAll() {
+    /// Returns the model's running session, starting one if needed. Call with `slot.lock` held.
+    private func runningSession(for model: ModelCatalog.Model, in slot: Slot) throws -> ModelSession {
         lock.lock()
-        defer { lock.unlock() }
-        for session in sessions.values { session.stop() }
-        sessions.removeAll()
-        generations.removeAll()
+        let current = slot.session
+        let startEpoch = epoch
+        lock.unlock()
+        if let current {
+            if current.isRunning { return current }
+            discard(current, from: slot)
+        }
+
+        let session = try ModelSession(model: model)
+        lock.lock()
+        let stopped = epoch != startEpoch
+        if !stopped { slot.session = session }
+        lock.unlock()
+        if stopped {
+            session.stop()
+            throw ModelRuntimeError.workerFailed("Model runtime stopped")
+        }
+        return session
+    }
+
+    private func discard(_ session: ModelSession, from slot: Slot) {
+        lock.lock()
+        if slot.session === session { slot.session = nil }
+        lock.unlock()
+        session.stop()
+    }
+
+    private func scheduleExpiry(of slot: Slot) {
+        lock.lock()
+        slot.generation += 1
+        let generation = slot.generation
+        lock.unlock()
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.idleTimeout) { [weak self] in
+            self?.expire(slot, generation: generation)
+        }
+    }
+
+    private func expire(_ slot: Slot, generation: Int) {
+        // Waits for a request in progress; that request makes this expiry stale.
+        slot.lock.lock()
+        defer { slot.lock.unlock() }
+        lock.lock()
+        guard slot.generation == generation, let session = slot.session else {
+            lock.unlock()
+            return
+        }
+        slot.session = nil
+        lock.unlock()
+        session.stop()
     }
 }
 

@@ -80,6 +80,8 @@ func cmdSetCleanup(_ id: String) {
     let delegate = AppDelegate()
     app.delegate = delegate
 
+    // A model worker that exits must not end the app when a request writes to its closed pipe.
+    signal(SIGPIPE, SIG_IGN)
     signal(SIGINT) { _ in
         print("\nStopping Local-Echo...")
         exit(0)

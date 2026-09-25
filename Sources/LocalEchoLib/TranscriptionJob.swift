@@ -14,6 +14,13 @@ struct TranscriptionJob: Sendable {
         cleanup = config.cleanupModel != nil && config.cleanupOptions.hasEdits ? config.cleanupOptions : nil
     }
 
+    /// Starts the models this job needs, so loading overlaps the recording instead of following it.
+    func warmUp() {
+        guard let model = ModelCatalog.speechModel(modelID) else { return }
+        ModelRuntime.shared.warmUp(model)
+        if cleanup != nil { ModelRuntime.shared.warmUp(ModelCatalog.cleanup) }
+    }
+
     /// Transcribes the audio, then applies cleanup when enabled. Cleanup failures keep the raw transcript.
     func run(audioURL: URL) throws -> String {
         guard let model = ModelCatalog.speechModel(modelID) else {
