@@ -32,7 +32,11 @@ public enum ModelCatalog {
         public let symbol: String
         public let tint: Tint
         public let backend: Backend
-        public let repository: String?
+        public let repository: String
+        /// The Hugging Face commit to download, so a changed repository cannot change what runs.
+        public let revision: String
+        /// The expected SHA-256 of a single-file download.
+        public let fileSHA256: String?
         public let approximateDownload: String
         public let sizeCategory: SizeCategory
     }
@@ -41,22 +45,26 @@ public enum ModelCatalog {
         Model(id: "qwen3-asr-1.7b-8bit", name: "Qwen3 ASR 1.7B INT8",
               summary: "La meilleure précision de Qwen3, au prix d'un modèle plus lourd.",
               tag: "Précis", symbol: "scope", tint: .purple, backend: .qwenASR,
-              repository: "mlx-community/Qwen3-ASR-1.7B-8bit", approximateDownload: "~2,5 Go",
+              repository: "mlx-community/Qwen3-ASR-1.7B-8bit",
+              revision: "a8379a2e2f9e313c9292cdf1af4055ab56d50d55", fileSHA256: nil, approximateDownload: "~2,5 Go",
               sizeCategory: .heavy),
         Model(id: "parakeet-tdt-v3-mixed", name: "Parakeet TDT v3 Q4/Q8",
               summary: "Le plus rapide et le plus léger. 25 langues européennes, dont le français.",
               tag: "Rapide", symbol: "hare.fill", tint: .green, backend: .parakeet,
-              repository: "MarkChen1214/parakeet-tdt-0.6b-v3-MLX-Mixed-4bit8bit", approximateDownload: "~400 Mo",
+              repository: "MarkChen1214/parakeet-tdt-0.6b-v3-MLX-Mixed-4bit8bit",
+              revision: "2ab31603b4264174a5a01a4d02fd97317f71989d", fileSHA256: nil, approximateDownload: "~400 Mo",
               sizeCategory: .lightweight),
         Model(id: "qwen3-asr-1.7b-4bit", name: "Qwen3 ASR 1.7B Q4/Q8",
               summary: "Bon équilibre entre précision, vitesse et taille.",
               tag: "Équilibré", symbol: "scalemass.fill", tint: .blue, backend: .qwenASRSession,
-              repository: "moona3k/mlx-qwen3-asr-1.7b-4bit", approximateDownload: "~1,2 Go",
+              repository: "moona3k/mlx-qwen3-asr-1.7b-4bit",
+              revision: "b2315a2537123353af98e37fc93eae078f1b7cf3", fileSHA256: nil, approximateDownload: "~1,2 Go",
               sizeCategory: .medium),
         Model(id: "large-v3-turbo", name: "Whisper Large v3 Turbo",
               summary: "Polyvalent et éprouvé, reconnaît un très grand nombre de langues.",
               tag: "Multilingue", symbol: "globe", tint: .teal, backend: .whisper,
-              repository: nil, approximateDownload: "~1,6 Go",
+              repository: "ggerganov/whisper.cpp", revision: "5359861c739e955e79d9a303bcbc70fb988958b1",
+              fileSHA256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69", approximateDownload: "~1,6 Go",
               sizeCategory: .heavy),
     ]
 
@@ -64,7 +72,8 @@ public enum ModelCatalog {
         id: "qwen35-08b-qat-q4", name: "Qwen3.5 0.8B QAT Q4",
         summary: "Relit chaque transcription pour en corriger la forme.",
         tag: nil, symbol: "wand.and.stars", tint: .purple, backend: .cleanup,
-        repository: "YoozLabs/Qwen3.5-0.8B-qat-lean-4bit-mlx", approximateDownload: "~500 Mo",
+        repository: "YoozLabs/Qwen3.5-0.8B-qat-lean-4bit-mlx",
+        revision: "51d364e8e3a704d4926074833621d06d2527008c", fileSHA256: nil, approximateDownload: "~500 Mo",
         sizeCategory: .lightweight
     )
 
@@ -86,6 +95,14 @@ extension ModelCatalog.Model {
     /// The file a Whisper model downloads to.
     var whisperDownloadURL: URL { Config.configDir.appendingPathComponent("models/ggml-\(id).bin") }
 
+    /// Where the Whisper file is downloaded from, at the pinned revision.
+    var whisperSourceURL: URL? {
+        URL(string: "https://huggingface.co/\(repository)/resolve/\(revision)/ggml-\(id).bin")
+    }
+
+    /// Written by worker.py when a snapshot download completes.
+    var installMarker: String { "\(repository)@\(revision)" }
+
     /// The installed Whisper file, including locations used by older versions and by whisper.cpp.
     var whisperFileURL: URL? {
         let fileName = "ggml-\(id).bin"
@@ -99,9 +116,9 @@ extension ModelCatalog.Model {
 
     public var isInstalled: Bool {
         if backend == .whisper { return whisperFileURL != nil }
-        guard let repository,
-              let marker = try? String(contentsOf: directory.appendingPathComponent(".local-echo-ready"), encoding: .utf8),
-              marker == repository else { return false }
+        // Downloads made before revisions were pinned wrote only the repository name.
+        guard let marker = try? String(contentsOf: directory.appendingPathComponent(".local-echo-ready"), encoding: .utf8),
+              marker == installMarker || marker == repository else { return false }
         return (try? FileManager.default.contentsOfDirectory(atPath: directory.path))?
             .contains(where: { $0.hasSuffix(".safetensors") }) ?? false
     }

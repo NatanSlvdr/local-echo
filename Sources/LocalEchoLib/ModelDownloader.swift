@@ -1,23 +1,24 @@
+import CryptoKit
 import Foundation
 
 // Configuration is set before the URLSession task starts; delegate callbacks use its serial queue.
 public final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    static let baseURL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
     private static let downloadLock = NSLock()
 
     private var onProgress: ((Double) -> Void)?
     private var completion: ((Error?) -> Void)?
     private var destPath: URL?
+    private var expectedSHA256: String?
 
     public static func download(_ model: ModelCatalog.Model, onProgress: ((Double) -> Void)? = nil) throws {
         downloadLock.lock()
         defer { downloadLock.unlock() }
         if model.backend != .whisper {
             if model.isInstalled { return }
-            guard let repository = model.repository else { throw ModelDownloadError.downloadFailed }
             let process = Process()
             process.executableURL = try PythonRuntime.pythonURL()
-            process.arguments = [PythonRuntime.workerURL().path, "prepare", repository, model.directory.path]
+            process.arguments = [PythonRuntime.workerURL().path, "prepare", model.repository, model.revision,
+                                 model.directory.path]
             let stdout = Pipe()
             let stderr = Pipe()
             process.standardOutput = stdout
@@ -42,16 +43,16 @@ public final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unche
 
         try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
 
-        let urlString = "\(baseURL)/\(destPath.lastPathComponent)"
-        guard let url = URL(string: urlString) else {
+        guard let url = model.whisperSourceURL else {
             throw ModelDownloadError.downloadFailed
         }
 
-        print("Downloading \(model.id) model from \(urlString)...")
+        print("Downloading \(model.id) model from \(url.absoluteString)...")
 
         let downloader = ModelDownloader()
         downloader.onProgress = onProgress
         downloader.destPath = destPath
+        downloader.expectedSHA256 = model.fileSHA256
 
         let semaphore = DispatchSemaphore(value: 0)
         var downloadError: Error?
@@ -96,6 +97,11 @@ public final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unche
                 completion?(ModelDownloadError.invalidModelData)
                 return
             }
+            if let expectedSHA256, try ModelDownloader.sha256(of: destPath) != expectedSHA256 {
+                try? FileManager.default.removeItem(at: destPath)
+                completion?(ModelDownloadError.checksumMismatch)
+                return
+            }
 
             completion?(nil)
         } catch {
@@ -111,6 +117,17 @@ public final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unche
         let magicU32 = magic.withUnsafeBytes { $0.load(as: UInt32.self) }
         let knownMagics: Set<UInt32> = [0x67676d6c, 0x67676a74, 0x46554747]
         return knownMagics.contains(magicU32)
+    }
+
+    /// Hashes a file in chunks so large models are not read into memory at once.
+    static func sha256(of url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: 8 * 1024 * 1024), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
@@ -130,6 +147,7 @@ public enum ModelDownloadError: LocalizedError {
     case downloadFailed
     case httpError(Int)
     case invalidModelData
+    case checksumMismatch
     case runtimeError(String)
 
     public var errorDescription: String? {
@@ -140,6 +158,8 @@ public enum ModelDownloadError: LocalizedError {
             return "Download failed with HTTP status \(statusCode). Check your network connection or proxy settings."
         case .invalidModelData:
             return "Downloaded file is not a valid GGML model (possibly a proxy error page). Check your network connection or try downloading from a different network."
+        case .checksumMismatch:
+            return "The downloaded model does not match the expected file. Try downloading it again."
         case .runtimeError(let detail):
             return "Model setup failed: \(detail)"
         }

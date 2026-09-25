@@ -5,9 +5,27 @@ final class ModelAvailabilityTests: XCTestCase {
     func testCatalogHasUniqueIDsAndRepositories() {
         let models = ModelCatalog.speech + [ModelCatalog.cleanup]
         XCTAssertEqual(Set(models.map(\.id)).count, models.count)
-        for model in models where model.backend != .whisper {
-            XCTAssertNotNil(model.repository)
+        XCTAssertEqual(Set(models.map(\.repository)).count, models.count)
+    }
+
+    func testEveryDownloadIsPinnedToACommit() {
+        for model in ModelCatalog.speech + [ModelCatalog.cleanup] {
+            XCTAssertEqual(model.revision.count, 40, model.id)
+            XCTAssertTrue(model.revision.allSatisfy(\.isHexDigit), model.id)
+            XCTAssertEqual(model.installMarker, "\(model.repository)@\(model.revision)")
         }
+        let whisper = ModelCatalog.speechModel("large-v3-turbo")
+        XCTAssertEqual(whisper?.fileSHA256?.count, 64)
+        XCTAssertEqual(whisper?.whisperSourceURL?.absoluteString,
+                       "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo.bin")
+    }
+
+    func testSHA256OfFile() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data("abc".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        XCTAssertEqual(try ModelDownloader.sha256(of: file),
+                       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
     }
 
     func testAllSpeechModelsHaveOneSizeCategory() {

@@ -62,15 +62,16 @@ def cleanup_chunks(text, limit=1000):
     return chunks
 
 
-def prepare(repository, directory):
+def prepare(repository, revision, directory):
+    """Download one pinned commit, so a changed repository cannot change what runs."""
     from huggingface_hub import snapshot_download
 
     path = Path(directory)
     path.mkdir(parents=True, exist_ok=True)
-    snapshot_download(repo_id=repository, local_dir=path)
+    snapshot_download(repo_id=repository, revision=revision, local_dir=path)
     if not any(path.glob('*.safetensors')):
         raise RuntimeError('The model download contains no weights')
-    (path / '.local-echo-ready').write_text(repository)
+    (path / '.local-echo-ready').write_text(f'{repository}@{revision}')
 
 
 def load(backend, directory):
@@ -135,7 +136,7 @@ def serve(backend, directory):
 if __name__ == '__main__':
     try:
         if sys.argv[1] == 'prepare':
-            prepare(sys.argv[2], sys.argv[3])
+            prepare(sys.argv[2], sys.argv[3], sys.argv[4])
         elif sys.argv[1] == 'serve':
             serve(sys.argv[2], sys.argv[3])
         else:
