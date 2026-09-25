@@ -20,10 +20,10 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let headerView = StatusMenuHeaderView()
     private var isMenuOpen = false
-    private var optionsWindow: OptionsWindowController?
+    private var settingsWindow: SettingsWindowController?
+    private let configStore: ConfigStore
 
     var reprocessHandler: ((URL) -> Void)?
-    var onConfigChange: ((Config) -> Void)?
     var lastTranscription: String?
 
     enum State {
@@ -41,7 +41,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
         didSet { updateIcon() }
     }
 
-    override init() {
+    init(configStore: ConfigStore) {
+        self.configStore = configStore
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -60,10 +61,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
     /// Refreshes everything that shows the current state. The menu itself is rebuilt when it opens.
     func buildMenu() {
-        let config = Config.load()
-        if optionsWindow?.window?.isVisible == true {
-            optionsWindow?.refresh(config: config, isRecording: isRecording)
-        }
+        let config = configStore.config
+        settingsWindow?.setRecording(isRecording)
         let content = headerContent(config: config)
         headerView.update(content)
         statusItem.button?.toolTip = "Local-Echo · \(content.title)"
@@ -80,7 +79,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         if model == nil {
             buildMenu()
         } else {
-            headerView.update(headerContent(config: Config.load()))
+            headerView.update(headerContent(config: configStore.config))
         }
     }
 
@@ -88,7 +87,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu === self.menu else { return }
-        populateMenu(config: Config.load())
+        populateMenu(config: configStore.config)
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -103,7 +102,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
     private func headerContent(config: Config) -> StatusMenuHeaderView.Content {
         let hotkey = config.hotkeyDisplaySummary()
-        let toggleMode = config.toggleMode?.value ?? false
+        let toggleMode = config.usesToggleMode
         switch state {
         case .idle:
             return .init(symbol: "waveform", tint: .controlAccentColor, title: "Prêt à dicter",
@@ -160,11 +159,11 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
         let settingsItem = actionItem("Réglages…", symbol: "gearshape", key: ",") { [weak self] in
-            self?.openOptions(page: nil)
+            self?.openSettings(page: nil)
         }
         menu.addItem(settingsItem)
         menu.addItem(actionItem("À propos de Local-Echo", symbol: "info.circle") { [weak self] in
-            self?.openOptions(page: .about)
+            self?.openSettings(page: .about)
         })
         let quitItem = NSMenuItem(title: "Quitter Local-Echo", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         setMenuIcon("power", on: quitItem)
@@ -251,17 +250,14 @@ class StatusBarController: NSObject, NSMenuDelegate {
         let canChange = !isBusy
         submenu.addItem(sectionHeader("Modèle de transcription"))
         // Lighter models first, matching the settings window.
-        let models = ModelCatalog.SizeCategory.allCases.flatMap { category in
-            ModelCatalog.speech.filter { $0.sizeCategory == category }
-        }
-        for model in models {
+        for model in ModelCatalog.speechByWeight {
             let modelItem = actionItem(model.name) { [weak self] in
                 self?.changeConfig { $0.modelSize = model.id }
             }
             modelItem.state = model.id == config.modelSize ? .on : .off
             modelItem.isEnabled = canChange
             // Only a pending download is worth pointing out before switching.
-            if !ModelDownloader.modelExists(model.id) {
+            if !model.isInstalled {
                 setSubtitle("À télécharger · \(model.approximateDownload)", on: modelItem)
             }
             submenu.addItem(modelItem)
@@ -269,7 +265,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         submenu.addItem(.separator())
         submenu.addItem(actionItem("Gérer les modèles…") { [weak self] in
-            self?.openOptions(page: .transcription)
+            self?.openSettings(page: .transcription)
         })
 
         item.submenu = submenu
@@ -279,7 +275,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private func makeMicrophoneItem(config: Config) -> NSMenuItem {
         let devices = AudioDeviceManager.listInputDevices()
         let systemDefault = devices.first(where: \.isDefault)
-        let selected = Self.selectedDevice(in: devices, config: config)
+        let selected = config.selectedInputDevice(in: devices)
 
         let item = NSMenuItem(title: "Audio", action: nil, keyEquivalent: "")
         setMenuIcon("mic", on: item)
@@ -325,7 +321,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         let options = config.cleanupOptions
         let item = NSMenuItem(title: "Nettoyage du texte", action: nil, keyEquivalent: "")
         setMenuIcon("wand.and.stars", on: item)
-        setSubtitle(enabled ? "Mise en forme \(options.formattingLevel.title.lowercased())" : "Désactivé", on: item)
+        setSubtitle(config.cleanupSummary, on: item)
 
         let submenu = NSMenu()
         submenu.autoenablesItems = false
@@ -366,10 +362,10 @@ class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func makeShortcutItem(config: Config) -> NSMenuItem {
-        let toggleMode = config.toggleMode?.value ?? false
+        let toggleMode = config.usesToggleMode
         let item = NSMenuItem(title: "Raccourci", action: nil, keyEquivalent: "")
         setMenuIcon("keyboard", on: item)
-        setSubtitle("\(config.hotkeyDisplaySummary()) · \(toggleMode ? "Appuyer" : "Maintenir")", on: item)
+        setSubtitle(config.shortcutSummary, on: item)
 
         let submenu = NSMenu()
         submenu.autoenablesItems = false
@@ -380,7 +376,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         ]
         for (title, value) in modes {
             let modeItem = actionItem(title) { [weak self] in
-                self?.changeConfig { $0.toggleMode = FlexBool(value) }
+                self?.changeConfig { $0.usesToggleMode = value }
             }
             modeItem.state = toggleMode == value ? .on : .off
             modeItem.isEnabled = !isRecording
@@ -388,7 +384,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
         submenu.addItem(.separator())
         submenu.addItem(actionItem("Modifier le raccourci…") { [weak self] in
-            self?.openOptions(page: .controls)
+            self?.openSettings(page: .controls)
         })
 
         item.submenu = submenu
@@ -397,9 +393,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
     private func makeDuckingItem(config: Config) -> NSMenuItem {
         let item = actionItem("Baisser le son des autres apps") { [weak self] in
-            self?.changeConfig {
-                $0.duckOtherAudioDuringRecording = FlexBool(!$0.duckOtherAudioEnabled)
-            }
+            self?.changeConfig { $0.duckOtherAudioEnabled.toggle() }
         }
         item.state = config.duckOtherAudioEnabled ? .on : .off
         item.toolTip = "Réduit le volume des autres apps pendant l'enregistrement, puis le rétablit."
@@ -426,36 +420,28 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// Saves a change the same way the settings window does, so both stay in sync.
+    /// Saves a change through the shared store, which also updates the settings window.
     private func changeConfig(_ edit: (inout Config) -> Void) {
-        var updated = Config.load()
-        edit(&updated)
         do {
-            try updated.save()
-            onConfigChange?(updated)
-            buildMenu()
+            try configStore.update(edit)
         } catch {
             print("Error: could not save configuration: \(error.localizedDescription)")
             NSAlert(error: error).runModal()
         }
     }
 
-    private func openOptions(page: SettingsPage?) {
+    private func openSettings(page: SettingsPage?) {
         // Let menu tracking finish before activating the settings window.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            if self.optionsWindow == nil {
-                self.optionsWindow = OptionsWindowController { [weak self] config in
-                    self?.onConfigChange?(config)
-                }
-            }
-            guard let optionsWindow = self.optionsWindow else { return }
-            optionsWindow.refresh(config: Config.load(), isRecording: self.isRecording)
-            if let page { optionsWindow.show(page: page) }
+            let settingsWindow = self.settingsWindow ?? SettingsWindowController(configStore: self.configStore)
+            self.settingsWindow = settingsWindow
+            settingsWindow.refresh(isRecording: self.isRecording)
+            if let page { settingsWindow.show(page: page) }
             NSApplication.shared.setActivationPolicy(.regular)
             NSApplication.shared.activate(ignoringOtherApps: true)
-            optionsWindow.showWindow(nil)
-            optionsWindow.window?.makeKeyAndOrderFront(nil)
+            settingsWindow.showWindow(nil)
+            settingsWindow.window?.makeKeyAndOrderFront(nil)
         }
     }
 
@@ -520,16 +506,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         if #available(macOS 27.0, *) {
             item.preferredImageVisibility = .visible
         }
-    }
-
-    private static func selectedDevice(in devices: [AudioInputDevice], config: Config) -> AudioInputDevice? {
-        if let uid = config.audioInputDeviceUID {
-            return devices.first { $0.uid == uid }
-        }
-        if let id = config.audioInputDeviceID {
-            return devices.first { $0.id == id }
-        }
-        return nil
     }
 
     private static func preview(_ text: String) -> String {

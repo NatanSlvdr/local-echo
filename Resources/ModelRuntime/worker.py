@@ -74,11 +74,11 @@ def prepare(repository, directory):
 
 
 def load(backend, directory):
+    if backend == 'qwenASRSession':
+        from mlx_qwen3_asr import Session
+        session = Session(model=directory)
+        return lambda request: session.transcribe(request['audio']).text
     if backend == 'qwenASR':
-        if '4bit' in directory:
-            from mlx_qwen3_asr import Session
-            session = Session(model=directory)
-            return lambda request: session.transcribe(request['audio']).text
         from mlx_audio.stt import load as load_asr
         model = load_asr(directory)
         return lambda request: model.generate(request['audio']).text

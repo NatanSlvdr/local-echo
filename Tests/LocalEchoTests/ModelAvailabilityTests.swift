@@ -19,4 +19,20 @@ final class ModelAvailabilityTests: XCTestCase {
         XCTAssertEqual(Set(ModelCatalog.speech.filter { $0.sizeCategory == .heavy }.map(\.id)),
                        Set(["qwen3-asr-1.7b-8bit", "large-v3-turbo"]))
     }
+
+    func testSpeechModelsAreOrderedFromLightestToHeaviest() {
+        XCTAssertEqual(ModelCatalog.speechByWeight.map(\.id),
+                       ["parakeet-tdt-v3-mixed", "qwen3-asr-1.7b-4bit", "qwen3-asr-1.7b-8bit", "large-v3-turbo"])
+    }
+
+    func testMixedPrecisionQwenUsesItsOwnWorkerBackend() {
+        XCTAssertEqual(ModelCatalog.speechModel("qwen3-asr-1.7b-4bit")?.backend, .qwenASRSession)
+        XCTAssertEqual(ModelCatalog.speechModel("qwen3-asr-1.7b-8bit")?.backend, .qwenASR)
+    }
+
+    func testEverySpeechModelHasASummary() {
+        for model in ModelCatalog.speech {
+            XCTAssertFalse(model.summary.isEmpty, model.id)
+        }
+    }
 }

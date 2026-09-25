@@ -123,7 +123,7 @@ func cmdSetModel(_ size: String) {
     do {
         try config.save()
         print("Model set to: \(size)")
-        if !Transcriber.modelExists(modelSize: size) {
+        if !ModelCatalog.isInstalled(size) {
             print("Model will be downloaded on next start.")
         }
     } catch {
@@ -139,13 +139,13 @@ func cmdGetHotkey() {
 }
 
 func cmdDownloadModel(_ size: String) {
-    guard ModelCatalog.model(size) != nil else {
+    guard let model = ModelCatalog.model(size) else {
         print("Error: Unknown model '\(size)'")
         print("Available: \((Config.supportedModels + [ModelCatalog.cleanup.id]).joined(separator: ", "))")
         exit(1)
     }
     do {
-        try ModelDownloader.download(modelSize: size)
+        try ModelDownloader.download(model)
     } catch {
         print("Error: \(error.localizedDescription)")
         exit(1)
@@ -160,15 +160,14 @@ func cmdStatus() {
     print("Config:      \(Config.configFile.path)")
     print("Hotkey:      \(hotkeyDesc)")
     print("Model:       \(config.modelSize)")
-    print("Model ready: \(ModelDownloader.modelExists(config.modelSize) ? "yes" : "no")")
+    print("Model ready: \(ModelCatalog.isInstalled(config.modelSize) ? "yes" : "no")")
     print("Cleanup:     \(config.cleanupModel ?? "off")")
     if let cleanup = config.cleanupModel {
-        print("Cleanup ready: \(ModelDownloader.modelExists(cleanup) ? "yes" : "no")")
+        print("Cleanup ready: \(ModelCatalog.isInstalled(cleanup) ? "yes" : "no")")
     }
-    print("Whisper server: \(Transcriber.findWhisperServerBinary() != nil ? "yes" : "no")")
+    print("Whisper server: \(BundledBinaries.whisperServer != nil ? "yes" : "no")")
     print("Language:    Auto-detect")
-    let toggleMode = config.toggleMode?.value ?? false
-    print("Toggle:      \(toggleMode ? "on (press to start/stop)" : "off (hold to talk)")")
+    print("Toggle:      \(config.usesToggleMode ? "on (press to start/stop)" : "off (hold to talk)")")
 }
 
 let args = CommandLine.arguments

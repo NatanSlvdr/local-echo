@@ -291,7 +291,8 @@ final class ConfigTests: XCTestCase {
     }
 
     func testRemovedSettingsAreIgnoredAndNotSaved() throws {
-        let json = #"{"modelSize":"large-v3-turbo","spokenPunctuation":true}"#.data(using: .utf8)!
+        let json = #"{"modelSize":"large-v3-turbo","spokenPunctuation":true,"modelPath":"/tmp/model.bin"}"#
+            .data(using: .utf8)!
         let saved = try JSONEncoder().encode(try Config.decode(from: json))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: saved) as? [String: Any])
         for key in Config.removedKeys {
@@ -325,6 +326,61 @@ final class ConfigTests: XCTestCase {
     func testModifierFlagsIgnoresUnknown() {
         let config = HotkeyConfig(keyCode: 49, modifiers: ["cmd", "bogus"])
         XCTAssertEqual(config.modifierFlags, UInt64(1 << 20))
+    }
+
+    func testModifierNamesFollowRecordingOrder() {
+        XCTAssertEqual(HotkeyConfig.modifierNames(in: [.function, .control, .command]), ["cmd", "ctrl", "fn"])
+    }
+
+    func testModifierFlagForModifierKeysOnly() {
+        XCTAssertEqual(HotkeyConfig.modifierFlag(forKeyCode: 61), .option)
+        XCTAssertEqual(HotkeyConfig.modifierFlag(forKeyCode: 63), .function)
+        XCTAssertNil(HotkeyConfig.modifierFlag(forKeyCode: 49))
+    }
+
+    // MARK: - Shared summaries
+
+    func testToggleModeSetterAndShortcutSummary() {
+        var config = Config.defaultConfig
+        XCTAssertTrue(config.shortcutSummary.hasSuffix("Maintenir"))
+        config.usesToggleMode = true
+        XCTAssertEqual(config.toggleMode?.value, true)
+        XCTAssertTrue(config.shortcutSummary.hasSuffix("Appuyer"))
+    }
+
+    func testCleanupSummary() {
+        var config = Config.defaultConfig
+        XCTAssertEqual(config.cleanupSummary, "Mise en forme légère")
+        config.cleanupModel = nil
+        XCTAssertEqual(config.cleanupSummary, "Désactivé")
+    }
+
+    // MARK: - Selected microphone
+
+    private let devices = [
+        AudioInputDevice(id: 10, uid: "built-in", name: "MacBook", isDefault: true),
+        AudioInputDevice(id: 20, uid: "usb", name: "USB", isDefault: false),
+    ]
+
+    func testSelectedDeviceUsesUID() {
+        var config = Config.defaultConfig
+        config.audioInputDeviceUID = "usb"
+        config.audioInputDeviceID = 10
+        XCTAssertEqual(config.selectedInputDevice(in: devices)?.id, 20)
+    }
+
+    func testMissingUIDFallsBackToSystemDefaultInsteadOfStaleID() {
+        var config = Config.defaultConfig
+        config.audioInputDeviceUID = "unplugged"
+        config.audioInputDeviceID = 20
+        XCTAssertNil(config.selectedInputDevice(in: devices))
+    }
+
+    func testLegacyDeviceIDIsUsedWithoutUID() {
+        var config = Config.defaultConfig
+        config.audioInputDeviceID = 20
+        XCTAssertEqual(config.selectedInputDevice(in: devices)?.name, "USB")
+        XCTAssertNil(Config.defaultConfig.selectedInputDevice(in: devices))
     }
 
     // MARK: - Multiple hotkeys

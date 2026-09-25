@@ -232,7 +232,7 @@ def run(count, python, models, whisper_server, cleanup):
         root = Path(temporary)
         samples = {language: download_language(root, language, count) for language in LANGUAGES}
         results = {}
-        current, _ = transcribe(samples, MLXWorker(python, "qwenASR", models / "qwen3-asr-1.7b-4bit"))
+        current, _ = transcribe(samples, MLXWorker(python, "qwenASRSession", models / "qwen3-asr-1.7b-4bit"))
         results["qwen4"] = score(samples, current)
 
         if cleanup:

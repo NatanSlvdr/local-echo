@@ -9,25 +9,15 @@ public final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unche
     private var completion: ((Error?) -> Void)?
     private var destPath: URL?
 
-    public static func modelExists(_ id: String) -> Bool {
-        guard let model = ModelCatalog.model(id) else { return false }
-        if model.backend == .whisper { return Transcriber.findModel(modelSize: id) != nil }
-        guard let repository = model.repository,
-              let marker = try? String(contentsOf: model.directory.appendingPathComponent(".local-echo-ready"), encoding: .utf8),
-              marker == repository else { return false }
-        return (try? FileManager.default.contentsOfDirectory(atPath: model.directory.path))?
-            .contains(where: { $0.hasSuffix(".safetensors") }) ?? false
-    }
-
-    public static func download(modelSize: String, onProgress: ((Double) -> Void)? = nil) throws {
+    public static func download(_ model: ModelCatalog.Model, onProgress: ((Double) -> Void)? = nil) throws {
         downloadLock.lock()
         defer { downloadLock.unlock() }
-        guard let model = ModelCatalog.model(modelSize) else { throw ModelDownloadError.downloadFailed }
         if model.backend != .whisper {
-            if modelExists(modelSize) { return }
+            if model.isInstalled { return }
+            guard let repository = model.repository else { throw ModelDownloadError.downloadFailed }
             let process = Process()
             process.executableURL = try PythonRuntime.pythonURL()
-            process.arguments = [PythonRuntime.workerURL().path, "prepare", model.repository!, model.directory.path]
+            process.arguments = [PythonRuntime.workerURL().path, "prepare", repository, model.directory.path]
             let stdout = Pipe()
             let stderr = Pipe()
             process.standardOutput = stdout
@@ -35,30 +25,29 @@ public final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unche
             try process.run()
             let (_, errors) = ProcessOutput.read(stdout: stdout, stderr: stderr)
             process.waitUntilExit()
-            guard process.terminationStatus == 0, modelExists(modelSize) else {
+            guard process.terminationStatus == 0, model.isInstalled else {
                 let detail = String(data: errors, encoding: .utf8) ?? "Unknown download error"
                 throw ModelDownloadError.runtimeError(detail.trimmingCharacters(in: .whitespacesAndNewlines))
             }
             onProgress?(100)
             return
         }
-        let modelFileName = "ggml-\(modelSize).bin"
-        let modelsDir = Config.configDir.appendingPathComponent("models")
-        let destPath = modelsDir.appendingPathComponent(modelFileName)
+        let destPath = model.whisperDownloadURL
+        let modelsDir = destPath.deletingLastPathComponent()
 
-        if let existing = Transcriber.findModel(modelSize: modelSize) {
-            print("Model '\(modelSize)' already exists at \(existing)")
+        if let existing = model.whisperFileURL {
+            print("Model '\(model.id)' already exists at \(existing.path)")
             return
         }
 
         try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
 
-        let urlString = "\(baseURL)/\(modelFileName)"
+        let urlString = "\(baseURL)/\(destPath.lastPathComponent)"
         guard let url = URL(string: urlString) else {
             throw ModelDownloadError.downloadFailed
         }
 
-        print("Downloading \(modelSize) model from \(urlString)...")
+        print("Downloading \(model.id) model from \(urlString)...")
 
         let downloader = ModelDownloader()
         downloader.onProgress = onProgress

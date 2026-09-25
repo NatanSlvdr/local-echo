@@ -3,18 +3,21 @@ import AppKit
 /// Wires application services and keeps UI configuration on the main actor.
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var configStore: ConfigStore!
     private var statusBar: StatusBarController!
     private var recorder: AudioRecorder!
     private var dictation: DictationController!
-    private var config: Config!
     private var hotkeyManagers: [HotkeyManager] = []
     private var sleepWakeObservers: [NSObjectProtocol] = []
     private let permissionMonitor = PermissionMonitor()
     private var setupTask: Task<Void, Never>?
     private var downloadGeneration = 0
 
+    private var config: Config { configStore.config }
+
     public func applicationDidFinishLaunching(_ notification: Notification) {
-        statusBar = StatusBarController()
+        configStore = ConfigStore()
+        statusBar = StatusBarController(configStore: configStore)
         recorder = AudioRecorder()
         registerSleepWakeObservers()
         setupTask = Task { await setup() }
@@ -30,14 +33,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setup() async {
-        config = Config.load()
         migrateAudioDeviceUIDIfNeeded()
         if Config.effectiveMaxRecordings(config.maxRecordings) == 0 {
             RecordingStore.deleteAllRecordings()
         }
-        dictation = DictationController(recorder: recorder, statusBar: statusBar, config: config)
+        dictation = DictationController(recorder: recorder, statusBar: statusBar, configStore: configStore)
         statusBar.reprocessHandler = { [weak self] url in self?.dictation.reprocess(audioURL: url) }
-        statusBar.onConfigChange = { [weak self] config in self?.applyConfigChange(config) }
+        configStore.observe { [weak self] old, new in self?.configDidChange(from: old, to: new) }
         statusBar.buildMenu()
 
         if !(await Permissions.requestMicrophone()) {
@@ -57,8 +59,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard !Task.isCancelled else { return }
 
-        let modelSize = config.modelSize
-        guard await ensureModel(modelSize) else { return }
+        // A model chosen from the menu while setup waited replaces the one it started with.
+        var speechModel = config.modelSize
+        while true {
+            guard await ensureModel(speechModel) else { return }
+            guard config.modelSize != speechModel else { break }
+            speechModel = config.modelSize
+        }
         if let cleanupModel = config.cleanupModel {
             if !(await ensureModel(cleanupModel)) {
                 print("Cleanup model unavailable; dictation will use raw transcription until it is downloaded.")
@@ -74,22 +81,22 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         guard config.audioInputDeviceUID == nil,
               let legacyID = config.audioInputDeviceID,
               let uid = AudioDeviceManager.getDeviceUID(deviceID: legacyID) else { return }
-        config.audioInputDeviceUID = uid
-        try? config.save()
+        try? configStore.update { $0.audioInputDeviceUID = uid }
     }
 
-    private func ensureModel(_ modelSize: String) async -> Bool {
+    private func ensureModel(_ modelID: String) async -> Bool {
         downloadGeneration += 1
         let generation = downloadGeneration
-        if !ModelDownloader.modelExists(modelSize) {
+        guard let model = ModelCatalog.model(modelID) else { return false }
+        if !model.isInstalled {
             statusBar.state = .downloading
-            statusBar.updateDownloadProgress(model: modelSize)
+            statusBar.updateDownloadProgress(model: modelID)
             do {
                 try await Task.detached(priority: .userInitiated) { [weak self] in
-                    try ModelDownloader.download(modelSize: modelSize) { percent in
+                    try ModelDownloader.download(model) { percent in
                         Task { @MainActor [weak self] in
                             guard let self, self.downloadGeneration == generation else { return }
-                            self.statusBar.updateDownloadProgress(model: modelSize, percent: percent)
+                            self.statusBar.updateDownloadProgress(model: modelID, percent: percent)
                         }
                     }
                 }.value
@@ -102,19 +109,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             statusBar.updateDownloadProgress(model: nil)
         }
 
-        guard let model = ModelCatalog.model(modelSize) else { return false }
-        if model.backend == .whisper && Transcriber.findWhisperServerBinary() == nil {
+        if model.backend == .whisper && BundledBinaries.whisperServer == nil {
             showError("whisper-server not found. Rebuild Local-Echo.app.")
             return false
         }
-        if model.backend == .whisper,
-           (Transcriber.findModel(modelSize: modelSize).map {
-               ModelDownloader.isValidGGMLFile(at: URL(fileURLWithPath: $0))
-           } != true) {
-            showError("Model file is corrupted. Re-download with: local-echo download-model \(modelSize)")
+        if model.backend == .whisper, model.whisperFileURL.map(ModelDownloader.isValidGGMLFile(at:)) != true {
+            showError("Model file is corrupted. Re-download with: local-echo download-model \(modelID)")
             return false
         }
-        return ModelDownloader.modelExists(modelSize)
+        return model.isInstalled
     }
 
     private func showError(_ message: String) {
@@ -148,39 +151,32 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    public func reloadConfig() {
-        applyConfigChange(Config.load())
-    }
-
-    func applyConfigChange(_ newConfig: Config) {
-        guard dictation?.isReady == true else { return }
-        let modelChanged = newConfig.modelSize != config.modelSize
-        let cleanupChanged = newConfig.cleanupModel != config.cleanupModel
-        config = newConfig
-        dictation.updateConfig(newConfig)
-        installHotkeys()
+    private func configDidChange(from old: Config, to new: Config) {
         statusBar.buildMenu()
-        print("Config updated: model=\(config.modelSize) hotkey=\(config.hotkeySummary())")
+        guard dictation?.isReady == true else { return }
+        dictation.configDidChange()
+        if new.hotkeys != old.hotkeys { installHotkeys() }
+        print("Config updated: model=\(new.modelSize) hotkey=\(new.hotkeySummary())")
 
-        if modelChanged || cleanupChanged {
-            downloadGeneration += 1
-            statusBar.updateDownloadProgress(model: nil)
-            Task { [weak self] in
-                guard let self, self.config.modelSize == newConfig.modelSize else { return }
-                let speechReady = modelChanged ? await self.ensureModel(newConfig.modelSize) : true
-                var cleanupReady = true
-                if cleanupChanged, let model = newConfig.cleanupModel {
-                    cleanupReady = await self.ensureModel(model)
-                }
-                let ready = speechReady && cleanupReady
-                if speechReady && !cleanupReady {
-                    print("Cleanup model unavailable; dictation will use raw transcription until it is downloaded.")
-                    self.statusBar.state = .idle
-                    self.statusBar.buildMenu()
-                } else if ready, case .downloading = self.statusBar.state {
-                    self.statusBar.state = .idle
-                    self.statusBar.buildMenu()
-                }
+        let modelChanged = new.modelSize != old.modelSize
+        let cleanupChanged = new.cleanupModel != old.cleanupModel
+        guard modelChanged || cleanupChanged else { return }
+        downloadGeneration += 1
+        statusBar.updateDownloadProgress(model: nil)
+        Task { [weak self] in
+            guard let self, self.config.modelSize == new.modelSize else { return }
+            let speechReady = modelChanged ? await self.ensureModel(new.modelSize) : true
+            var cleanupReady = true
+            if cleanupChanged, let model = new.cleanupModel {
+                cleanupReady = await self.ensureModel(model)
+            }
+            if speechReady && !cleanupReady {
+                print("Cleanup model unavailable; dictation will use raw transcription until it is downloaded.")
+                self.statusBar.state = .idle
+                self.statusBar.buildMenu()
+            } else if speechReady, case .downloading = self.statusBar.state {
+                self.statusBar.state = .idle
+                self.statusBar.buildMenu()
             }
         }
     }

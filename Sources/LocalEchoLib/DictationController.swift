@@ -5,36 +5,35 @@ import AppKit
 final class DictationController {
     private let recorder: AudioRecorder
     private let statusBar: StatusBarController
+    private let configStore: ConfigStore
     private let inserter = TextInserter()
-    private var config: Config
-    private var transcriber: Transcriber
     private var lifecycle = RecordingLifecycle()
     private var currentRecordingURL: URL?
     private(set) var isReady = false
 
-    init(recorder: AudioRecorder, statusBar: StatusBarController, config: Config) {
+    private var config: Config { configStore.config }
+
+    init(recorder: AudioRecorder, statusBar: StatusBarController, configStore: ConfigStore) {
         self.recorder = recorder
         self.statusBar = statusBar
-        self.config = config
-        self.transcriber = Self.makeTranscriber(for: config)
-        configureRecorder(for: config)
+        self.configStore = configStore
     }
 
     func start() {
         isReady = true
         statusBar.state = .idle
         statusBar.buildMenu()
+        configureRecorder()
         recorder.prepare()
     }
 
-    func updateConfig(_ config: Config) {
-        self.config = config
-        transcriber = Self.makeTranscriber(for: config)
-        configureRecorder(for: config)
+    /// Applies audio settings after a configuration change. Transcription settings are read when each job starts.
+    func configDidChange() {
+        configureRecorder()
         recorder.prepare()
     }
 
-    private func configureRecorder(for config: Config) {
+    private func configureRecorder() {
         recorder.preferredDeviceID = AudioDeviceManager.resolveConfiguredDeviceID(
             uid: config.audioInputDeviceUID,
             legacyID: config.audioInputDeviceID
@@ -42,20 +41,13 @@ final class DictationController {
         recorder.duckOtherAudio = config.duckOtherAudioEnabled
     }
 
-    private static func makeTranscriber(for config: Config) -> Transcriber {
-        Transcriber(
-            modelSize: config.modelSize,
-            whisperPrompt: config.whisperPrompt
-        )
-    }
-
     func keyDown() {
         guard isReady else { return }
         if !lifecycle.isRecording {
             guard case .idle = statusBar.state else { return }
-            guard Transcriber.modelExists(modelSize: config.modelSize) else { return }
+            guard ModelCatalog.isInstalled(config.modelSize) else { return }
         }
-        switch lifecycle.keyDown(toggleMode: config.toggleMode?.value ?? false) {
+        switch lifecycle.keyDown(toggleMode: config.usesToggleMode) {
         case .startRecording: startRecording()
         case .stopRecording: stopRecording()
         case .none, .cancelRecording, .prepareRecorder: break
@@ -64,7 +56,7 @@ final class DictationController {
 
     func keyUp() {
         guard isReady else { return }
-        if lifecycle.keyUp(toggleMode: config.toggleMode?.value ?? false) == .stopRecording {
+        if lifecycle.keyUp(toggleMode: config.usesToggleMode) == .stopRecording {
             stopRecording()
         }
     }
@@ -103,21 +95,24 @@ final class DictationController {
         statusBar.state = .transcribing
         statusBar.buildMenu()
 
-        // Capture settings before leaving the main actor. A config reload affects the next job.
-        let transcriber = self.transcriber
-        let cleanupEnabled = config.cleanupModel != nil
-        let cleanupOptions = config.cleanupOptions
         let maxRecordings = Config.effectiveMaxRecordings(config.maxRecordings)
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
-            defer {
-                if maxRecordings == 0 { try? FileManager.default.removeItem(at: audioURL) }
+        transcribe(audioURL, afterwards: {
+            if maxRecordings == 0 {
+                try? FileManager.default.removeItem(at: audioURL)
+            } else {
+                RecordingStore.prune(maxCount: maxRecordings)
             }
-            let result = Result { () -> String in
-                try TranscriptionPipeline.run(transcriber: transcriber, audioURL: audioURL,
-                                              cleanupEnabled: cleanupEnabled, cleanupOptions: cleanupOptions)
-            }
-            if maxRecordings > 0 { RecordingStore.prune(maxCount: maxRecordings) }
-            DispatchQueue.main.async { self.finishTranscription(result) }
+        }, completion: finishTranscription)
+    }
+
+    /// Runs a job off the main actor with the current settings, then reports back on the main actor.
+    private func transcribe(_ audioURL: URL, afterwards: @escaping @Sendable () -> Void = {},
+                            completion: @escaping @MainActor (Result<String, Error>) -> Void) {
+        let job = TranscriptionJob(config: config)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result { try job.run(audioURL: audioURL) }
+            afterwards()
+            DispatchQueue.main.async { completion(result) }
         }
     }
 
@@ -157,7 +152,7 @@ final class DictationController {
 
     func systemDidWake() {
         guard lifecycle.systemDidWake(isReady: isReady) == .prepareRecorder else { return }
-        configureRecorder(for: config)
+        configureRecorder()
         recorder.prepare()
     }
 
@@ -165,17 +160,7 @@ final class DictationController {
         guard case .idle = statusBar.state else { return }
         statusBar.state = .transcribing
         statusBar.buildMenu()
-
-        let transcriber = self.transcriber
-        let cleanupEnabled = config.cleanupModel != nil
-        let cleanupOptions = config.cleanupOptions
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
-            let result = Result { () -> String in
-                try TranscriptionPipeline.run(transcriber: transcriber, audioURL: audioURL,
-                                              cleanupEnabled: cleanupEnabled, cleanupOptions: cleanupOptions)
-            }
-            DispatchQueue.main.async { self.finishReprocessing(result) }
-        }
+        transcribe(audioURL, completion: finishReprocessing)
     }
 
     private func finishReprocessing(_ result: Result<String, Error>) {
@@ -205,21 +190,6 @@ final class DictationController {
                 statusBar.state = .idle
                 statusBar.buildMenu()
             }
-        }
-    }
-}
-
-/// Applies optional text stages after speech recognition for both dictation and reprocessing.
-enum TranscriptionPipeline {
-    static func run(transcriber: Transcriber, audioURL: URL,
-                    cleanupEnabled: Bool, cleanupOptions: CleanupOptions) throws -> String {
-        let text = try transcriber.transcribe(audioURL: audioURL)
-        guard cleanupEnabled, cleanupOptions.hasEdits, !text.isEmpty else { return text }
-        do {
-            return try ModelRuntime.shared.clean(text, options: cleanupOptions)
-        } catch {
-            fputs("Cleanup unavailable: \(error.localizedDescription)\n", Foundation.stderr)
-            return text
         }
     }
 }

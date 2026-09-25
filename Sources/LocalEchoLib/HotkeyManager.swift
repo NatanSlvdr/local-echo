@@ -84,7 +84,7 @@ class HotkeyManager {
 
     private func handleEvent(_ event: NSEvent) {
         guard !ShortcutCaptureGate.shared.isActive else { return }
-        if isModifierOnlyKey(keyCode) {
+        if HotkeyConfig.modifierFlag(forKeyCode: keyCode) != nil {
             guard event.type == .flagsChanged else { return }
             guard event.keyCode == keyCode else { return }
 
@@ -92,21 +92,14 @@ class HotkeyManager {
                 modifierPressed = false
                 onKeyUp?()
             } else {
-                if requiredModifiers != 0 {
-                    let currentMods = UInt64(event.modifierFlags.rawValue) & 0x00FF0000
-                    guard currentMods & requiredModifiers == requiredModifiers else { return }
-                }
+                guard hasRequiredModifiers(event) else { return }
                 modifierPressed = true
                 onKeyDown?()
             }
         } else {
             guard event.keyCode == keyCode else { return }
             if event.type == .keyDown {
-                guard !keyPressed else { return }
-                if requiredModifiers != 0 {
-                    let currentMods = UInt64(event.modifierFlags.rawValue) & 0x00FF0000
-                    guard currentMods & requiredModifiers == requiredModifiers else { return }
-                }
+                guard !keyPressed, hasRequiredModifiers(event) else { return }
                 keyPressed = true
                 onKeyDown?()
             } else if event.type == .keyUp, keyPressed {
@@ -116,7 +109,8 @@ class HotkeyManager {
         }
     }
 
-    private func isModifierOnlyKey(_ code: UInt16) -> Bool {
-        return [54, 55, 56, 58, 59, 60, 61, 62, 63].contains(code)
+    // Extra held modifiers are allowed, so Ctrl+Space still fires while Shift is down.
+    private func hasRequiredModifiers(_ event: NSEvent) -> Bool {
+        UInt64(event.modifierFlags.rawValue) & requiredModifiers == requiredModifiers
     }
 }
