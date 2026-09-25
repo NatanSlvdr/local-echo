@@ -1,3 +1,4 @@
+import Accelerate
 import AVFoundation
 import AudioToolbox
 import CoreAudio
@@ -261,12 +262,13 @@ private final class AudioCaptureRenderState {
         buffer.frameLength = frames
         let status = AudioUnitRender(unit, flags, timestamp, 1, frames, buffer.mutableAudioBufferList)
         guard status == noErr else { captureError = status; return status }
-        if let samples = buffer.floatChannelData?.pointee {
-            for index in 0..<Int(frames) {
-                let value = Double(samples[index])
-                peakLevel = max(peakLevel, abs(value))
-                sumSquares += value * value
-            }
+        if let samples = buffer.floatChannelData?.pointee, frames > 0 {
+            var peak: Float = 0
+            var squares: Float = 0
+            vDSP_maxmgv(samples, 1, &peak, vDSP_Length(frames))
+            vDSP_svesq(samples, 1, &squares, vDSP_Length(frames))
+            peakLevel = max(peakLevel, Double(peak))
+            sumSquares += Double(squares)
             samplesMeasured += UInt64(frames)
         }
         guard let file else { return noErr }
