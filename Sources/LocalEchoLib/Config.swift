@@ -5,6 +5,7 @@ public struct Config: Codable, Sendable {
     public var modelPath: String?
     public var modelSize: String
     public var cleanupModel: String?
+    public var cleanupOptions: CleanupOptions
     public var whisperPrompt: String?
     public var spokenPunctuation: FlexBool?
     public var maxRecordings: Int?
@@ -41,6 +42,7 @@ public struct Config: Codable, Sendable {
         case modelPath
         case modelSize
         case cleanupModel
+        case cleanupOptions
         case whisperPrompt
         case spokenPunctuation
         case maxRecordings
@@ -66,6 +68,7 @@ public struct Config: Codable, Sendable {
         self.cleanupModel = try c.decodeIfPresent(String.self, forKey: .cleanupModel) ?? ModelCatalog.cleanup.id
         if cleanupModel == "off" { cleanupModel = nil }
         if cleanupModel != nil && cleanupModel != ModelCatalog.cleanup.id { cleanupModel = ModelCatalog.cleanup.id }
+        self.cleanupOptions = try c.decodeIfPresent(CleanupOptions.self, forKey: .cleanupOptions) ?? .defaults
         self.whisperPrompt = try c.decodeIfPresent(String.self, forKey: .whisperPrompt)
         self.spokenPunctuation = try c.decodeIfPresent(FlexBool.self, forKey: .spokenPunctuation)
         self.maxRecordings = try c.decodeIfPresent(Int.self, forKey: .maxRecordings)
@@ -82,6 +85,7 @@ public struct Config: Codable, Sendable {
         try c.encodeIfPresent(modelPath, forKey: .modelPath)
         try c.encode(modelSize, forKey: .modelSize)
         try c.encode(cleanupModel ?? "off", forKey: .cleanupModel)
+        try c.encode(cleanupOptions, forKey: .cleanupOptions)
         try c.encodeIfPresent(whisperPrompt, forKey: .whisperPrompt)
         try c.encodeIfPresent(spokenPunctuation, forKey: .spokenPunctuation)
         try c.encodeIfPresent(maxRecordings, forKey: .maxRecordings)
@@ -96,6 +100,7 @@ public struct Config: Codable, Sendable {
         modelPath: String?,
         modelSize: String,
         cleanupModel: String? = ModelCatalog.cleanup.id,
+        cleanupOptions: CleanupOptions = .defaults,
         whisperPrompt: String? = nil,
         spokenPunctuation: FlexBool?,
         maxRecordings: Int?,
@@ -110,6 +115,7 @@ public struct Config: Codable, Sendable {
         self.modelPath = modelPath
         self.modelSize = modelSize
         self.cleanupModel = cleanupModel
+        self.cleanupOptions = cleanupOptions
         self.whisperPrompt = whisperPrompt
         self.spokenPunctuation = spokenPunctuation
         self.maxRecordings = maxRecordings

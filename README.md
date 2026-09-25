@@ -46,6 +46,11 @@ If you used the previous app name, Local-Echo copies your existing settings into
   "hotkey": { "keyCode": 63, "modifiers": [] },
   "modelSize": "large-v3-turbo",
   "cleanupModel": "qwen35-08b-qat-q4",
+  "cleanupOptions": {
+    "formattingLevel": "light",
+    "correctRecognitionErrors": true,
+    "removeFillers": false
+  },
   "spokenPunctuation": false,
   "whisperPrompt": "Use punctuation and capitalization.",
   "maxRecordings": 0,
@@ -76,6 +81,7 @@ Both `hotkey` (single) and `hotkeys` (array) are supported. If both are present,
 | **modifiers** | `[]` | `"cmd"`, `"ctrl"`, `"shift"`, `"opt"`, `"fn"` — combine for chords |
 | **modelSize** | `"large-v3-turbo"` | `large-v3-turbo`, `qwen3-asr-1.7b-8bit`, `parakeet-tdt-v3-mixed`, or `qwen3-asr-1.7b-4bit` |
 | **cleanupModel** | `"qwen35-08b-qat-q4"` | This Qwen3.5 cleanup model, or `"off"` |
+| **cleanupOptions** | Light formatting and obvious-error correction on; filler removal off | `formattingLevel`: `none`, `light`, `polished` (paragraphs), or `structured` (paragraphs and lists when clearly dictated). Also choose obvious recognition corrections and filler/repetition removal. Missing fields use the defaults. Older `formatText` and `addParagraphs` settings are migrated. |
 | **spokenPunctuation** | `false` | Say "comma", "period", etc. to insert punctuation instead of auto-punctuation |
 | **whisperPrompt** | — | Optional prompt text passed to Whisper to guide style, vocabulary, or punctuation. Omit it or leave it blank to use Whisper's default behavior. |
 | **maxRecordings** | `0` | Optionally store past recordings locally as `.wav` files for re-transcribing from the tray menu. `0` = nothing stored (default). Set 1-100 to keep that many recent recordings. |
@@ -102,7 +108,7 @@ Click the waveform icon for status and options. **Recent Recordings** lists your
 
 Click the menu bar icon to access **Copy Last Dictation** — recovers your most recent transcription if you dictated without a text field focused.
 
-Choose **Options...** to open the native settings window. **Général** shows the current choices and useful dictation tips. **Transcription** groups the four supported models by download size; each selectable row shows the model name, weight, and download status. **Nettoyage du texte** has the same simple selector and an on/off switch. In **Contrôles**, click the shortcut and press a key or key combination, then choose whether to hold it or press it to start and stop. **Avancé** opens or reveals the configuration file and can restore default settings after confirmation. The settings sidebar stays visible.
+Choose **Options...** to open the native settings window. **Général** shows the current choices and useful dictation tips. **Transcription** groups the four supported models by download size; each selectable row shows the model name, weight, and download status. **Nettoyage du texte** has the same simple selector and an on/off switch, plus a formatting level (none, light, polished, or structured) and separate switches for obvious recognition errors and for fillers and repetitions. In **Contrôles**, click the shortcut and press a key or key combination, then choose whether to hold it or press it to start and stop. **Avancé** opens or reveals the configuration file and can restore default settings after confirmation. The settings sidebar stays visible.
 
 ## Compare
 

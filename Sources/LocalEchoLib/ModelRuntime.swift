@@ -16,9 +16,11 @@ public final class ModelRuntime: @unchecked Sendable {
         try use(model: model, request: ["audio": audioURL.path], prompt: prompt)
     }
 
-    public func clean(_ text: String) throws -> String {
+    public func clean(_ text: String, options: CleanupOptions) throws -> String {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
-        return try use(model: ModelCatalog.cleanup, request: ["text": text], prompt: nil)
+        var request = options.requestFields
+        request["text"] = text
+        return try use(model: ModelCatalog.cleanup, request: request, prompt: nil)
     }
 
     private func use(model: ModelCatalog.Model, request: [String: String], prompt: String?) throws -> String {

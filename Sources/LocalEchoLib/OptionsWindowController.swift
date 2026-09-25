@@ -421,6 +421,22 @@ private struct SettingsView: View {
         }
     }
 
+    private func cleanupSetting(_ title: String, symbol: String, detail: String,
+                                keyPath: WritableKeyPath<CleanupOptions, Bool>) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Toggle(isOn: Binding(
+                get: { settings.config.cleanupOptions[keyPath: keyPath] },
+                set: { enabled in settings.change { $0.cleanupOptions[keyPath: keyPath] = enabled } }
+            )) {
+                settingLabel(title, symbol: symbol)
+            }
+            .toggleStyle(.switch)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private var generalPage: some View {
         Form {
             Section {
@@ -543,7 +559,7 @@ private struct SettingsView: View {
             } header: {
                 sectionHeading("Après la transcription", symbol: "wand.and.stars")
             } footer: {
-                Text("Corrige la ponctuation, les majuscules et l'espacement, puis tente de corriger les erreurs évidentes de reconnaissance. Relisez les textes importants.")
+                Text("Le nettoyage s'applique après la reconnaissance vocale. Relisez les textes importants : une correction peut être erronée.")
             }
 
             Section {
@@ -554,6 +570,52 @@ private struct SettingsView: View {
                 sectionHeading("Modèle de nettoyage", symbol: "cpu")
             } footer: {
                 Text("Un seul modèle de nettoyage est disponible actuellement. Utilisez l'interrupteur ci-dessus pour le désactiver.")
+            }
+
+            Section {
+                Picker(selection: Binding(
+                    get: { settings.config.cleanupOptions.formattingLevel },
+                    set: { level in settings.change { $0.cleanupOptions.formattingLevel = level } }
+                )) {
+                    ForEach(CleanupFormattingLevel.allCases, id: \.self) { level in
+                        Text(level.title).tag(level)
+                    }
+                } label: {
+                    settingLabel("Niveau de mise en forme", symbol: "textformat")
+                }
+                .pickerStyle(.segmented)
+                Text(settings.config.cleanupOptions.formattingLevel.explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                sectionHeading("Mise en forme de la transcription", symbol: "text.alignleft")
+            } footer: {
+                Text("La ponctuation prononcée se règle séparément dans Transcription et s'applique avant le nettoyage.")
+            }
+            .disabled(settings.config.cleanupModel == nil)
+
+            Section {
+                cleanupSetting("Corriger les erreurs de transcription évidentes", symbol: "checkmark.seal",
+                               detail: "Corrige un mot manifestement mal reconnu, sans réécrire la phrase.",
+                               keyPath: \.correctRecognitionErrors)
+            } header: {
+                sectionHeading("Correction des mots", symbol: "text.badge.checkmark")
+            }
+            .disabled(settings.config.cleanupModel == nil)
+
+            Section {
+                cleanupSetting("Supprimer hésitations et répétitions", symbol: "text.badge.minus",
+                               detail: "Ex. « Je, je voudrais euh partir » peut devenir « Je voudrais partir ».",
+                               keyPath: \.removeFillers)
+            } header: {
+                sectionHeading("Options avancées", symbol: "slider.horizontal.3")
+            }
+            .disabled(settings.config.cleanupModel == nil)
+
+            if settings.config.cleanupModel != nil && !settings.config.cleanupOptions.hasEdits {
+                Text("Aucune correction n'est activée : la transcription restera telle quelle.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

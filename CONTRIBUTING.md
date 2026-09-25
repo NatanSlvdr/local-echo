@@ -27,6 +27,12 @@ Run the Swift tests with:
 swift test
 ```
 
+Run the cleanup prompt tests for the MLX worker with:
+
+```bash
+python3 Tests/test_cleanup_prompt.py
+```
+
 To test actual transcription, build the app and run:
 
 ```bash

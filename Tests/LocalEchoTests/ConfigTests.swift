@@ -240,6 +240,35 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(saved?.contains("\"cleanupModel\":\"off\"") == true)
     }
 
+    func testCleanupOptionsMigrateAndRoundTrip() throws {
+        let legacy = try Config.decode(from: Data(#"{"modelSize":"large-v3-turbo"}"#.utf8))
+        XCTAssertEqual(legacy.cleanupOptions, .defaults)
+
+        let partial = try Config.decode(from: Data(#"{"modelSize":"large-v3-turbo","cleanupOptions":{"removeFillers":true}}"#.utf8))
+        XCTAssertEqual(partial.cleanupOptions.formattingLevel, .light)
+        XCTAssertTrue(partial.cleanupOptions.correctRecognitionErrors)
+        XCTAssertTrue(partial.cleanupOptions.removeFillers)
+
+        var updated = partial
+        updated.cleanupOptions.formattingLevel = .structured
+        let restored = try Config.decode(from: JSONEncoder().encode(updated))
+        XCTAssertEqual(restored.cleanupOptions, updated.cleanupOptions)
+        XCTAssertEqual(restored.cleanupOptions.requestFields["formatting_level"], "structured")
+    }
+
+    func testCleanupOptionsMigrateOldSwitchesAndDiscardTerms() throws {
+        let old = try Config.decode(from: Data(#"{"modelSize":"large-v3-turbo","cleanupOptions":{"formatText":false,"addParagraphs":false,"protectedTerms":"OpenAI"}}"#.utf8))
+        XCTAssertEqual(old.cleanupOptions.formattingLevel, .none)
+        let paragraphs = try Config.decode(from: Data(#"{"modelSize":"large-v3-turbo","cleanupOptions":{"formatText":true,"addParagraphs":true}}"#.utf8))
+        XCTAssertEqual(paragraphs.cleanupOptions.formattingLevel, .polished)
+
+        let saved = String(data: try JSONEncoder().encode(old), encoding: .utf8)!
+        XCTAssertFalse(saved.contains("protectedTerms"))
+        XCTAssertFalse(saved.contains("formatText"))
+        XCTAssertFalse(saved.contains("addParagraphs"))
+        XCTAssertTrue(saved.contains("\"formattingLevel\":\"none\""))
+    }
+
     func testRemovedLargeModelMigratesToTurbo() throws {
         let json = """
         {

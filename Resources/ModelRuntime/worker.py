@@ -1,8 +1,65 @@
 """Local JSON-lines worker. One process owns one MLX model until its host closes it."""
 import contextlib
 import json
+import re
 import sys
 from pathlib import Path
+
+
+def cleanup_option(request, key, default):
+    """Read a boolean option from the worker's string-valued request."""
+    value = request.get(key)
+    if value is None:
+        return default
+    return value is True or value == 'true'
+
+
+def cleanup_prompt(request):
+    """Build only the editing instructions selected in the app settings."""
+    instructions = [
+        'You edit speech transcripts. Preserve the original language and meaning. '
+        'Make only the changes requested below. Output only the edited transcript, with no explanation.'
+    ]
+    formatting = request.get('formatting_level', 'light')
+    if formatting == 'none':
+        instructions.append('Keep punctuation, capitalization, line breaks, and layout unchanged. '
+                            'Adjust spacing only where another enabled edit removes or replaces a word.')
+    elif formatting == 'polished':
+        instructions.append('Correct punctuation, capitalization, and spacing. Make sentences easy to read '
+                            'and add paragraph breaks at natural topic changes. Do not create lists or headings.')
+    elif formatting == 'structured':
+        instructions.append('Correct punctuation, capitalization, and spacing. Organize ideas into readable '
+                            'paragraphs. Use a short list only when the speaker clearly enumerates separate '
+                            'items; keep narrative speech as prose. Do not invent items, headings, or content.')
+    else:
+        instructions.append('Correct punctuation, capitalization, and spacing. Keep existing paragraph breaks '
+                            'and do not create lists or headings.')
+
+    if cleanup_option(request, 'correct_recognition_errors', True):
+        instructions.append('Correct only obvious speech-recognition errors; preserve names and intended wording.')
+    else:
+        instructions.append('Do not correct suspected recognition errors or replace words.')
+
+    if cleanup_option(request, 'remove_fillers', False):
+        instructions.append('Remove filler words and accidental word repetitions, but keep intentional repetitions.')
+    else:
+        instructions.append('Keep filler words, hesitations, and repetitions.')
+
+    return ' '.join(instructions)
+
+
+def cleanup_chunks(text, limit=1000):
+    """Split long dictation while preserving its original whitespace."""
+    chunks = []
+    current = ''
+    for token in re.findall(r'\s+|\S+', text):
+        if current and len(current) + len(token) > limit and current.strip():
+            chunks.append(current)
+            current = ''
+        current += token
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def prepare(repository, directory):
@@ -36,37 +93,26 @@ def load(backend, directory):
         model, tokenizer = load_lm(directory)
         sampler = make_sampler(temp=0)
 
-        def clean_chunk(text):
+        def clean_chunk(text, system_prompt):
+            leading = text[:len(text) - len(text.lstrip())]
+            trailing = text[len(text.rstrip()):]
+            core = text.strip()
+            if not core:
+                return text
             prompt = tokenizer.apply_chat_template([
-                {'role': 'system', 'content': (
-                    'You edit speech transcripts. Correct punctuation, capitalization, '
-                    'spacing, obvious transcription errors and spoken punctuation. '
-                    'Preserve the language, meaning, names, and wording. '
-                    'Output only the corrected transcript, with no explanation.')},
-                {'role': 'user', 'content': text},
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': core},
             ], add_generation_prompt=True, enable_thinking=False)
             result = generate(model, tokenizer, prompt=prompt,
-                              max_tokens=min(1200, max(128, len(text) + 64)),
+                              max_tokens=min(1200, max(128, len(core) + 64)),
                               sampler=sampler, verbose=False)
             if '</think>' in result:
                 result = result.split('</think>', 1)[1]
-            return result.strip() or text
+            return leading + (result.strip() or core) + trailing
 
         def clean(request):
-            words = request['text'].split()
-            chunks = []
-            current = []
-            length = 0
-            for word in words:
-                if current and length + len(word) + 1 > 1000:
-                    chunks.append(' '.join(current))
-                    current = []
-                    length = 0
-                current.append(word)
-                length += len(word) + 1
-            if current:
-                chunks.append(' '.join(current))
-            return ' '.join(clean_chunk(chunk) for chunk in chunks)
+            system_prompt = cleanup_prompt(request)
+            return ''.join(clean_chunk(chunk, system_prompt) for chunk in cleanup_chunks(request['text']))
 
         return clean
     raise ValueError(f'Unknown backend: {backend}')
