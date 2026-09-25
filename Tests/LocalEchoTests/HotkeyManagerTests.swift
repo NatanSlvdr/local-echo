@@ -93,6 +93,55 @@ final class HotkeyManagerTests: XCTestCase {
         XCTAssertEqual(starts, 0)
     }
 
+    func testModifierHotkeyFollowsKeyStateInsteadOfToggling() throws {
+        var handler: ((NSEvent) -> Void)?
+        var starts = 0
+        var stops = 0
+        let manager = HotkeyManager(
+            keyCode: 61,
+            addGlobalMonitor: { _, callback in handler = callback; return NSObject() },
+            addLocalMonitor: { _, _ in nil },
+            removeMonitor: { _ in }
+        )
+        manager.start(onKeyDown: { starts += 1 }, onKeyUp: { stops += 1 })
+        defer { manager.stop() }
+
+        let rightOptionDown = NSEvent.ModifierFlags(rawValue: NSEvent.ModifierFlags.option.rawValue | 0x40)
+        let bothOptionsDown = NSEvent.ModifierFlags(rawValue: rightOptionDown.rawValue | 0x20)
+        let leftOptionDown = NSEvent.ModifierFlags(rawValue: NSEvent.ModifierFlags.option.rawValue | 0x20)
+
+        // A release without a press is ignored instead of starting a recording.
+        handler?(try XCTUnwrap(makeFlagsEvent(keyCode: 61, flags: [])))
+        XCTAssertEqual(starts, 0)
+
+        handler?(try XCTUnwrap(makeFlagsEvent(keyCode: 61, flags: rightOptionDown)))
+        handler?(try XCTUnwrap(makeFlagsEvent(keyCode: 61, flags: rightOptionDown)))
+        XCTAssertEqual(starts, 1)
+
+        // The left Option key does not release the right one.
+        handler?(try XCTUnwrap(makeFlagsEvent(keyCode: 58, flags: bothOptionsDown)))
+        XCTAssertEqual(stops, 0)
+
+        handler?(try XCTUnwrap(makeFlagsEvent(keyCode: 61, flags: leftOptionDown)))
+        XCTAssertEqual(stops, 1)
+        handler?(try XCTUnwrap(makeFlagsEvent(keyCode: 61, flags: [])))
+        XCTAssertEqual(stops, 1)
+    }
+
+    func testModifierKeyStateFallsBackWithoutSideBits() {
+        XCTAssertTrue(HotkeyManager.isModifierKeyDown(61, in: .option))
+        XCTAssertFalse(HotkeyManager.isModifierKeyDown(61, in: .command))
+        XCTAssertTrue(HotkeyManager.isModifierKeyDown(63, in: .function))
+        XCTAssertFalse(HotkeyManager.isModifierKeyDown(49, in: .option))
+    }
+
+    private func makeFlagsEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> NSEvent? {
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) else { return nil }
+        event.type = .flagsChanged
+        event.flags = CGEventFlags(rawValue: UInt64(flags.rawValue))
+        return NSEvent(cgEvent: event)
+    }
+
     private func makeKeyEvent(type: NSEvent.EventType, keyCode: UInt16,
                               flags: NSEvent.ModifierFlags = []) -> NSEvent? {
         NSEvent.keyEvent(

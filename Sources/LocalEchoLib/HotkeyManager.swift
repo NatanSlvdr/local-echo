@@ -88,13 +88,15 @@ class HotkeyManager {
             guard event.type == .flagsChanged else { return }
             guard event.keyCode == keyCode else { return }
 
-            if modifierPressed {
-                modifierPressed = false
-                onKeyUp?()
-            } else {
+            // Reads the key's state from the event instead of toggling, so a missed event cannot invert press and release.
+            let pressed = Self.isModifierKeyDown(keyCode, in: event.modifierFlags)
+            if pressed, !modifierPressed {
                 guard hasRequiredModifiers(event) else { return }
                 modifierPressed = true
                 onKeyDown?()
+            } else if !pressed, modifierPressed {
+                modifierPressed = false
+                onKeyUp?()
             }
         } else {
             guard event.keyCode == keyCode else { return }
@@ -107,6 +109,22 @@ class HotkeyManager {
                 onKeyUp?()
             }
         }
+    }
+
+    /// Device-dependent bits (NX_DEVICE*KEYMASK) that tell the left and right modifier keys apart.
+    private static let sideMasks: [UInt16: UInt] = [
+        54: 0x10, 55: 0x08,     // right, left Command
+        56: 0x02, 60: 0x04,     // left, right Shift
+        58: 0x20, 61: 0x40,     // left, right Option
+        59: 0x01, 62: 0x2000,   // left, right Control
+    ]
+    private static let allSideBits: UInt = sideMasks.values.reduce(0, |)
+
+    static func isModifierKeyDown(_ keyCode: UInt16, in flags: NSEvent.ModifierFlags) -> Bool {
+        guard let modifier = HotkeyConfig.modifierFlag(forKeyCode: keyCode) else { return false }
+        guard flags.contains(modifier) else { return false }
+        guard let side = sideMasks[keyCode], flags.rawValue & allSideBits != 0 else { return true }
+        return flags.rawValue & side != 0
     }
 
     // Extra held modifiers are allowed, so Ctrl+Space still fires while Shift is down.
