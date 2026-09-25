@@ -9,6 +9,8 @@ final class DictationController {
     private let inserter = TextInserter()
     private var lifecycle = RecordingLifecycle()
     private var currentRecordingURL: URL?
+    /// The speech model last found on disk, so each key press skips the file system check.
+    private var installedModelID: String?
     private(set) var isReady = false
 
     private var config: Config { configStore.config }
@@ -29,6 +31,7 @@ final class DictationController {
 
     /// Applies audio settings after a configuration change. Transcription settings are read when each job starts.
     func configDidChange() {
+        installedModelID = nil
         configureRecorder()
         recorder.prepare()
     }
@@ -45,13 +48,22 @@ final class DictationController {
         guard isReady else { return }
         if !lifecycle.isRecording {
             guard case .idle = statusBar.state else { return }
-            guard ModelCatalog.isInstalled(config.modelSize) else { return }
+            guard isModelInstalled() else { return }
         }
         switch lifecycle.keyDown(toggleMode: config.usesToggleMode) {
         case .startRecording: startRecording()
         case .stopRecording: stopRecording()
         case .none, .cancelRecording, .prepareRecorder: break
         }
+    }
+
+    /// Only a found model is remembered, so a download that finishes later is noticed on the next press.
+    private func isModelInstalled() -> Bool {
+        let modelID = config.modelSize
+        if installedModelID == modelID { return true }
+        guard ModelCatalog.isInstalled(modelID) else { return false }
+        installedModelID = modelID
+        return true
     }
 
     func keyUp() {
