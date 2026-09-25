@@ -83,16 +83,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let generation = downloadGeneration
         if !ModelDownloader.modelExists(modelSize) {
             statusBar.state = .downloading
-            statusBar.updateDownloadProgress("Downloading \(modelSize) model...")
+            statusBar.updateDownloadProgress(model: modelSize)
             do {
                 try await Task.detached(priority: .userInitiated) { [weak self] in
                     try ModelDownloader.download(modelSize: modelSize) { percent in
                         Task { @MainActor [weak self] in
                             guard let self, self.downloadGeneration == generation else { return }
-                            self.statusBar.updateDownloadProgress(
-                                "Downloading \(modelSize) model... \(Int(percent))%",
-                                percent: percent
-                            )
+                            self.statusBar.updateDownloadProgress(model: modelSize, percent: percent)
                         }
                     }
                 }.value
@@ -102,7 +99,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 return false
             }
             guard generation == downloadGeneration else { return false }
-            statusBar.updateDownloadProgress(nil)
+            statusBar.updateDownloadProgress(model: nil)
         }
 
         guard let model = ModelCatalog.model(modelSize) else { return false }
@@ -167,7 +164,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if modelChanged || cleanupChanged {
             downloadGeneration += 1
-            statusBar.updateDownloadProgress(nil)
+            statusBar.updateDownloadProgress(model: nil)
             Task { [weak self] in
                 guard let self, self.config.modelSize == newConfig.modelSize else { return }
                 let speechReady = modelChanged ? await self.ensureModel(newConfig.modelSize) : true

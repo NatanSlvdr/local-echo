@@ -55,6 +55,12 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
     func refresh(config: Config, isRecording: Bool) {
         settings.refresh(config: config, isRecording: isRecording)
     }
+
+    func show(page: SettingsPage) {
+        settings.cancelShortcutCapture()
+        settings.searchText = ""
+        settings.selection = page
+    }
 }
 
 // Shares live configuration and device state with the SwiftUI settings pages.
@@ -228,7 +234,7 @@ private final class SettingsStore: ObservableObject {
     }
 }
 
-private enum SettingsPage: String, Hashable, CaseIterable {
+enum SettingsPage: String, Hashable, CaseIterable {
     case general, transcription, cleanup, audio, controls, advanced, about
 
     var title: String {
@@ -440,7 +446,7 @@ private struct SettingsView: View {
     private var generalPage: some View {
         Form {
             Section {
-                infoRow("Raccourci clavier", value: settings.config.hotkeySummary(), symbol: "keyboard")
+                infoRow("Raccourci clavier", value: settings.config.hotkeyDisplaySummary(), symbol: "keyboard")
                 infoRow("Modèle de transcription", value: selectedSpeechModel?.name ?? settings.config.modelSize,
                         symbol: "waveform")
                 infoRow("Nettoyage du texte", value: settings.config.cleanupModel == nil ? "Désactivé" : "Activé",
@@ -461,7 +467,7 @@ private struct SettingsView: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     settingLabel("Retrouver la dernière dictée", symbol: "doc.on.clipboard")
-                    Text("Choisissez « Copy Last Dictation » dans le menu de Local-Echo pour récupérer le dernier texte.")
+                    Text("Choisissez « Copier la dernière dictée » dans le menu de Local-Echo pour récupérer le dernier texte.")
                         .foregroundStyle(.secondary)
                 }
                 VStack(alignment: .leading, spacing: 4) {
@@ -672,7 +678,7 @@ private struct SettingsView: View {
                     HStack {
                         settingLabel("Raccourci de dictée", symbol: "keyboard")
                         Spacer()
-                        Text(settings.isCapturingShortcut ? "Appuyez sur les touches…" : settings.config.hotkeySummary())
+                        Text(settings.isCapturingShortcut ? "Appuyez sur les touches…" : settings.config.hotkeyDisplaySummary())
                             .foregroundStyle(settings.isCapturingShortcut ? .secondary : .primary)
                     }
                     .contentShape(Rectangle())

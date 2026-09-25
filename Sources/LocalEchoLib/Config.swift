@@ -28,6 +28,12 @@ public struct Config: Codable, Sendable {
             .joined(separator: " · ")
     }
 
+    public func hotkeyDisplaySummary() -> String {
+        hotkeys
+            .map { KeyCodes.displayName(keyCode: $0.keyCode, modifiers: $0.modifiers) }
+            .joined(separator: " · ")
+    }
+
     private static func deduplicateHotkeys(_ list: [HotkeyConfig]) -> [HotkeyConfig] {
         var out: [HotkeyConfig] = []
         for h in list where !out.contains(h) {

@@ -31,7 +31,7 @@ A waveform icon appears in your menu bar when it's running.
 
 The default hotkey is the **Globe key** (🌐, bottom-left). Hold it, speak, release.
 
-On macOS 14 and later, Local-Echo can lower the system output volume while recording. Use **Lower Other Audio While Recording** in the menu bar to turn this on or off. The original output volume is restored after recording. Microphone capture always uses the standard audio engine.
+On macOS 14 and later, Local-Echo can lower the system output volume while recording. Use **Baisser le son pendant la dictée** in the menu bar to turn this on or off. The original output volume is restored after recording. Microphone capture always uses the standard audio engine.
 
 > **[Setup and permissions guide](docs/install-guide.md)** — permission walkthrough, non-English macOS instructions, and troubleshooting.
 
@@ -59,7 +59,7 @@ If you used the previous app name, Local-Echo copies your existing settings into
 }
 ```
 
-After editing the file, choose **Options... → Avancé → Recharger la configuration** from the menu bar app.
+After editing the file, choose **Réglages… → Avancé → Recharger la configuration** from the menu bar app.
 
 To bind multiple hotkeys, use the `hotkeys` array instead:
 
@@ -96,7 +96,10 @@ If the Globe key opens the emoji picker: **System Settings → Keyboard → "Pre
 
 ## Menu bar
 
-Click the waveform icon for status and options. **Recent Recordings** lists your last recordings; click one to re-transcribe and copy the result to the clipboard.
+Click the waveform icon to open a native macOS menu. The header shows the current state with a colored status badge, what to press next, and a progress bar while a model downloads. When a permission is missing, a button opens the right pane of System Settings.
+
+- **Dernière dictée** — **Copier la dernière dictée** (⌘C) shows a preview of your most recent transcription and copies it, which helps if you dictated without a text field focused. When recordings are kept, **Enregistrements récents** lists them with their age and length; click one to re-transcribe it and copy the result.
+- **Réglages rapides** — switch the speech model (with download size and status), the microphone, text cleanup and its formatting level, the shortcut mode, and whether other audio is lowered while recording, without opening the settings window.
 
 | State | Icon |
 |---|---|
@@ -106,9 +109,7 @@ Click the waveform icon for status and options. **Recent Recordings** lists your
 | Downloading model | Progress ring |
 | Waiting for permission | Lock |
 
-Click the menu bar icon to access **Copy Last Dictation** — recovers your most recent transcription if you dictated without a text field focused.
-
-Choose **Options...** to open the native settings window. **Général** shows the current choices and useful dictation tips. **Transcription** groups the four supported models by download size; each selectable row shows the model name, weight, and download status. **Nettoyage du texte** has the same simple selector and an on/off switch, plus a formatting level (none, light, polished, or structured) and separate switches for obvious recognition errors and for fillers and repetitions. In **Contrôles**, click the shortcut and press a key or key combination, then choose whether to hold it or press it to start and stop. **Avancé** opens or reveals the configuration file and can restore default settings after confirmation. The settings sidebar stays visible.
+Choose **Réglages…** (⌘,) to open the native settings window. **Général** shows the current choices and useful dictation tips. **Transcription** groups the four supported models by download size; each selectable row shows the model name, weight, and download status. **Nettoyage du texte** has the same simple selector and an on/off switch, plus a formatting level (none, light, polished, or structured) and separate switches for obvious recognition errors and for fillers and repetitions. In **Contrôles**, click the shortcut and press a key or key combination, then choose whether to hold it or press it to start and stop. **Avancé** opens or reveals the configuration file and can restore default settings after confirmation. The settings sidebar stays visible.
 
 ## Compare
 

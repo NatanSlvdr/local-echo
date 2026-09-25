@@ -52,4 +52,37 @@ public struct KeyCodes {
         }
         return (modifiers + [keyName]).joined(separator: "+")
     }
+
+    /// Formats a shortcut with the key symbols macOS shows in menus, such as ⌃⌥⇧⌘Espace.
+    public static func displayName(keyCode: UInt16, modifiers: [String]) -> String {
+        let order = ["fn", "ctrl", "opt", "shift", "cmd"]
+        let symbols = modifiers
+            .compactMap { modifierSymbol($0.lowercased()) }
+            .sorted { (order.firstIndex(of: $0.name) ?? 0) < (order.firstIndex(of: $1.name) ?? 0) }
+            .map(\.symbol)
+        let key = displayKeyNames[keyCode] ?? codeToName[keyCode].map { $0.uppercased() } ?? "Touche \(keyCode)"
+        if symbols.isEmpty { return key }
+        // Modifier keys read better with a separator, as in "Fn + ⌥ droite".
+        let separator = modifierKeyCodes.contains(keyCode) || symbols.contains("Fn") ? " + " : ""
+        return symbols.joined(separator: separator) + separator + key
+    }
+
+    private static let modifierKeyCodes: Set<UInt16> = [54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+
+    private static let displayKeyNames: [UInt16: String] = [
+        36: "↩", 48: "⇥", 49: "Espace", 51: "⌫", 53: "⎋", 57: "⇪",
+        54: "⌘ droite", 55: "⌘", 56: "⇧", 58: "⌥", 59: "⌃",
+        60: "⇧ droite", 61: "⌥ droite", 62: "⌃ droite", 63: "Fn",
+    ]
+
+    private static func modifierSymbol(_ name: String) -> (name: String, symbol: String)? {
+        switch name {
+        case "cmd", "command": ("cmd", "⌘")
+        case "shift": ("shift", "⇧")
+        case "opt", "option", "alt": ("opt", "⌥")
+        case "ctrl", "control": ("ctrl", "⌃")
+        case "fn", "globe": ("fn", "Fn")
+        default: nil
+        }
+    }
 }

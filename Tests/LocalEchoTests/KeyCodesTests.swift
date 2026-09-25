@@ -125,4 +125,18 @@ final class KeyCodesTests: XCTestCase {
             XCTAssertEqual(reparsed?.keyCode, parsed.keyCode, "Round-trip failed for: \(input)")
         }
     }
+
+    // MARK: - displayName
+
+    func testDisplayNameUsesMenuSymbolsInMacOSOrder() {
+        XCTAssertEqual(KeyCodes.displayName(keyCode: 49, modifiers: ["cmd", "shift"]), "⇧⌘Espace")
+        XCTAssertEqual(KeyCodes.displayName(keyCode: 0, modifiers: ["cmd", "ctrl", "opt"]), "⌃⌥⌘A")
+    }
+
+    func testDisplayNameNamesModifierOnlyShortcuts() {
+        XCTAssertEqual(KeyCodes.displayName(keyCode: 63, modifiers: []), "Fn")
+        XCTAssertEqual(KeyCodes.displayName(keyCode: 61, modifiers: []), "⌥ droite")
+        XCTAssertEqual(KeyCodes.displayName(keyCode: 61, modifiers: ["cmd"]), "⌘ + ⌥ droite")
+        XCTAssertEqual(KeyCodes.displayName(keyCode: 96, modifiers: ["fn"]), "Fn + F5")
+    }
 }

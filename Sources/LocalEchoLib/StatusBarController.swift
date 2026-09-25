@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 
 class MenuItemTarget: NSObject {
     let handler: () -> Void
@@ -7,16 +8,18 @@ class MenuItemTarget: NSObject {
 }
 
 @MainActor
-class StatusBarController: NSObject {
+class StatusBarController: NSObject, NSMenuDelegate {
     var statusItem: NSStatusItem
     var animationTimer: Timer?
     var animationFrame = 0
     var animationFrames: [NSImage] = []
-    private var downloadProgress: String?
+    private var downloadingModel: String?
     var downloadPercent: Double = 0
     private var copiedFeedback = false
     private var menuItemTargets: [MenuItemTarget] = []
-    private var stateMenuItem: NSMenuItem?
+    private let menu = NSMenu()
+    private let headerView = StatusMenuHeaderView()
+    private var isMenuOpen = false
     private var optionsWindow: OptionsWindowController?
 
     var reprocessHandler: ((URL) -> Void)?
@@ -47,8 +50,371 @@ class StatusBarController: NSObject {
             button.image?.isTemplate = true
         }
 
+        menu.delegate = self
+        menu.autoenablesItems = false
+        statusItem.menu = menu
         buildMenu()
     }
+
+    // MARK: - Public updates
+
+    /// Refreshes everything that shows the current state. The menu itself is rebuilt when it opens.
+    func buildMenu() {
+        let config = Config.load()
+        if optionsWindow?.window?.isVisible == true {
+            optionsWindow?.refresh(config: config, isRecording: isRecording)
+        }
+        let content = headerContent(config: config)
+        headerView.update(content)
+        statusItem.button?.toolTip = "Local-Echo · \(content.title)"
+        if isMenuOpen { populateMenu(config: config) }
+    }
+
+    /// Pass the model being downloaded, or nil once the download ends.
+    func updateDownloadProgress(model: String?, percent: Double = 0) {
+        downloadingModel = model
+        downloadPercent = percent
+        if case .downloading = state {
+            setIcon(StatusBarController.drawDownloadProgress(downloadPercent))
+        }
+        if model == nil {
+            buildMenu()
+        } else {
+            headerView.update(headerContent(config: Config.load()))
+        }
+    }
+
+    // MARK: - NSMenuDelegate
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === self.menu else { return }
+        populateMenu(config: Config.load())
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        if menu === self.menu { isMenuOpen = true }
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        if menu === self.menu { isMenuOpen = false }
+    }
+
+    // MARK: - Header
+
+    private func headerContent(config: Config) -> StatusMenuHeaderView.Content {
+        let hotkey = config.hotkeyDisplaySummary()
+        let toggleMode = config.toggleMode?.value ?? false
+        switch state {
+        case .idle:
+            return .init(symbol: "waveform", tint: .controlAccentColor, title: "Prêt à dicter",
+                         detail: toggleMode ? "Appuyez sur \(hotkey) pour commencer" : "Maintenez \(hotkey) et parlez")
+        case .recording:
+            return .init(symbol: "mic.fill", tint: .systemRed, title: "Enregistrement…",
+                         detail: toggleMode ? "Appuyez de nouveau sur \(hotkey) pour terminer" : "Relâchez \(hotkey) pour terminer")
+        case .transcribing:
+            return .init(symbol: "text.bubble.fill", tint: .systemPurple, title: "Transcription…",
+                         detail: ModelCatalog.speechModel(config.modelSize)?.name ?? config.modelSize)
+        case .downloading:
+            let name = downloadingModel.flatMap { ModelCatalog.model($0)?.name } ?? "le modèle"
+            let percent = downloadPercent > 0 ? " · \(Int(downloadPercent)) %" : ""
+            return .init(symbol: "arrow.down", tint: .systemBlue, title: "Téléchargement…",
+                         detail: "\(name)\(percent)", progress: downloadPercent)
+        case .waitingForMicrophonePermission:
+            return .init(symbol: "mic.slash.fill", tint: .systemOrange, title: "Accès au micro requis",
+                         detail: "Autorisez Local-Echo dans Réglages Système.")
+        case .waitingForPermission:
+            return .init(symbol: "hand.raised.fill", tint: .systemOrange, title: "Accès Accessibilité requis",
+                         detail: "Local-Echo en a besoin pour écrire le texte dicté.")
+        case .copiedToClipboard:
+            return .init(symbol: "checkmark", tint: .systemGreen, title: "Copié dans le presse-papiers",
+                         detail: "Collez le texte avec ⌘V.")
+        case .error(let message):
+            return .init(symbol: "exclamationmark.triangle.fill", tint: .systemRed, title: "Un problème est survenu",
+                         detail: message)
+        }
+    }
+
+    // MARK: - Menu
+
+    private func populateMenu(config: Config) {
+        menuItemTargets = []
+        menu.removeAllItems()
+
+        headerView.update(headerContent(config: config))
+        let headerItem = NSMenuItem()
+        headerItem.view = headerView
+        menu.addItem(headerItem)
+        if let permissionItem = makePermissionItem() {
+            menu.addItem(permissionItem)
+        }
+
+        menu.addItem(.separator())
+        addLastDictationSection(config: config)
+
+        menu.addItem(.separator())
+        menu.addItem(sectionHeader("Réglages rapides"))
+        menu.addItem(makeModelItem(config: config))
+        menu.addItem(makeMicrophoneItem(config: config))
+        menu.addItem(makeCleanupItem(config: config))
+        menu.addItem(makeShortcutItem(config: config))
+        menu.addItem(makeDuckingItem(config: config))
+
+        menu.addItem(.separator())
+        let settingsItem = actionItem("Réglages…", symbol: "gearshape", key: ",") { [weak self] in
+            self?.openOptions(page: nil)
+        }
+        menu.addItem(settingsItem)
+        menu.addItem(actionItem("À propos de Local-Echo", symbol: "info.circle") { [weak self] in
+            self?.openOptions(page: .about)
+        })
+        let quitItem = NSMenuItem(title: "Quitter Local-Echo", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        setMenuIcon("power", on: quitItem)
+        menu.addItem(quitItem)
+    }
+
+    private func makePermissionItem() -> NSMenuItem? {
+        let item: NSMenuItem
+        switch state {
+        case .waitingForMicrophonePermission:
+            item = actionItem("Ouvrir les réglages du micro…", symbol: "mic") {
+                Permissions.openMicrophoneSettings()
+            }
+        case .waitingForPermission:
+            item = actionItem("Ouvrir les réglages d'accessibilité…", symbol: "accessibility") {
+                Permissions.openAccessibilitySettings()
+            }
+        default:
+            return nil
+        }
+        if #available(macOS 14.0, *) {
+            item.badge = NSMenuItemBadge(string: "Requis")
+        }
+        return item
+    }
+
+    private func addLastDictationSection(config: Config) {
+        menu.addItem(sectionHeader("Dernière dictée"))
+
+        let copyItem = NSMenuItem(title: copiedFeedback ? "Copiée !" : "Copier la dernière dictée",
+                                  action: #selector(copyLastTranscription), keyEquivalent: "c")
+        copyItem.target = self
+        copyItem.isEnabled = lastTranscription != nil && !copiedFeedback
+        setMenuIcon(copiedFeedback ? "checkmark" : "doc.on.doc", on: copyItem)
+        if let lastTranscription { setSubtitle(Self.preview(lastTranscription), on: copyItem) }
+        menu.addItem(copyItem)
+
+        guard Config.effectiveMaxRecordings(config.maxRecordings) > 0 else { return }
+        let recordings = RecordingStore.listRecordings()
+        let recordingsItem = NSMenuItem(title: "Enregistrements récents", action: nil, keyEquivalent: "")
+        setMenuIcon("clock.arrow.circlepath", on: recordingsItem)
+        if #available(macOS 14.0, *), !recordings.isEmpty {
+            recordingsItem.badge = NSMenuItemBadge(count: recordings.count)
+        }
+
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        if recordings.isEmpty {
+            let emptyItem = NSMenuItem(title: "Aucun enregistrement", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            submenu.addItem(emptyItem)
+        } else {
+            submenu.addItem(sectionHeader("Retranscrire et copier"))
+            let canReprocess = isIdle
+            for recording in recordings {
+                let title = Self.relativeDateFormatter.localizedString(for: recording.date, relativeTo: Date())
+                let item = actionItem(title.prefix(1).uppercased() + title.dropFirst()) { [weak self] in
+                    self?.reprocessHandler?(recording.url)
+                }
+                var details = [Self.displayDateFormatter.string(from: recording.date)]
+                if let duration = Self.duration(of: recording.url) { details.append(duration) }
+                setSubtitle(details.joined(separator: " · "), on: item)
+                item.isEnabled = canReprocess
+                submenu.addItem(item)
+            }
+        }
+        submenu.addItem(.separator())
+        submenu.addItem(actionItem("Afficher dans le Finder", symbol: "folder") {
+            RecordingStore.ensureDirectory()
+            NSWorkspace.shared.open(RecordingStore.recordingsDir)
+        })
+        recordingsItem.submenu = submenu
+        menu.addItem(recordingsItem)
+    }
+
+    private func makeModelItem(config: Config) -> NSMenuItem {
+        let current = ModelCatalog.speechModel(config.modelSize)
+        let item = NSMenuItem(title: "Modèle", action: nil, keyEquivalent: "")
+        setMenuIcon("waveform", on: item)
+        setSubtitle(current?.name ?? config.modelSize, on: item)
+
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        let canChange = !isBusy
+        submenu.addItem(sectionHeader("Modèle de transcription"))
+        // Lighter models first, matching the settings window.
+        let models = ModelCatalog.SizeCategory.allCases.flatMap { category in
+            ModelCatalog.speech.filter { $0.sizeCategory == category }
+        }
+        for model in models {
+            let modelItem = actionItem(model.name) { [weak self] in
+                self?.changeConfig { $0.modelSize = model.id }
+            }
+            modelItem.state = model.id == config.modelSize ? .on : .off
+            modelItem.isEnabled = canChange
+            // Only a pending download is worth pointing out before switching.
+            if !ModelDownloader.modelExists(model.id) {
+                setSubtitle("À télécharger · \(model.approximateDownload)", on: modelItem)
+            }
+            submenu.addItem(modelItem)
+        }
+
+        submenu.addItem(sectionHeader("Ponctuation"))
+        let punctuationItem = actionItem("Interpréter la ponctuation dictée") { [weak self] in
+            self?.changeConfig { $0.spokenPunctuation = FlexBool(!($0.spokenPunctuation?.value ?? false)) }
+        }
+        punctuationItem.state = config.spokenPunctuation?.value == true ? .on : .off
+        submenu.addItem(punctuationItem)
+        submenu.addItem(.separator())
+        submenu.addItem(actionItem("Gérer les modèles…") { [weak self] in
+            self?.openOptions(page: .transcription)
+        })
+
+        item.submenu = submenu
+        return item
+    }
+
+    private func makeMicrophoneItem(config: Config) -> NSMenuItem {
+        let devices = AudioDeviceManager.listInputDevices()
+        let systemDefault = devices.first(where: \.isDefault)
+        let selected = Self.selectedDevice(in: devices, config: config)
+
+        let item = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
+        setMenuIcon("mic", on: item)
+        setSubtitle(selected?.name ?? systemDefault?.name ?? "Par défaut du système", on: item)
+
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        let canChange = !isRecording
+        submenu.addItem(sectionHeader("Entrée audio"))
+        let defaultItem = actionItem("Par défaut du système") { [weak self] in
+            self?.changeConfig {
+                $0.audioInputDeviceID = nil
+                $0.audioInputDeviceUID = nil
+            }
+        }
+        defaultItem.state = selected == nil ? .on : .off
+        defaultItem.isEnabled = canChange
+        if let systemDefault { setSubtitle(systemDefault.name, on: defaultItem) }
+        submenu.addItem(defaultItem)
+
+        for device in devices {
+            let deviceItem = actionItem(device.name) { [weak self] in
+                self?.changeConfig {
+                    $0.audioInputDeviceID = device.id
+                    $0.audioInputDeviceUID = device.uid
+                }
+            }
+            deviceItem.state = selected?.id == device.id ? .on : .off
+            deviceItem.isEnabled = canChange
+            submenu.addItem(deviceItem)
+        }
+
+        item.submenu = submenu
+        return item
+    }
+
+    private func makeCleanupItem(config: Config) -> NSMenuItem {
+        let enabled = config.cleanupModel != nil
+        let options = config.cleanupOptions
+        let item = NSMenuItem(title: "Nettoyage du texte", action: nil, keyEquivalent: "")
+        setMenuIcon("wand.and.stars", on: item)
+        setSubtitle(enabled ? "Mise en forme \(options.formattingLevel.title.lowercased())" : "Désactivé", on: item)
+
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        submenu.addItem(sectionHeader("Nettoyage après transcription"))
+        let toggleItem = actionItem("Activer le nettoyage") { [weak self] in
+            self?.changeConfig { $0.cleanupModel = $0.cleanupModel == nil ? ModelCatalog.cleanup.id : nil }
+        }
+        toggleItem.state = enabled ? .on : .off
+        submenu.addItem(toggleItem)
+
+        submenu.addItem(sectionHeader("Niveau de mise en forme"))
+        for level in CleanupFormattingLevel.allCases {
+            let levelItem = actionItem(level.title) { [weak self] in
+                self?.changeConfig { $0.cleanupOptions.formattingLevel = level }
+            }
+            levelItem.state = options.formattingLevel == level ? .on : .off
+            levelItem.isEnabled = enabled
+            levelItem.toolTip = level.explanation
+            submenu.addItem(levelItem)
+        }
+
+        submenu.addItem(sectionHeader("Corrections"))
+        let corrections: [(String, WritableKeyPath<CleanupOptions, Bool>)] = [
+            ("Corriger les erreurs évidentes", \.correctRecognitionErrors),
+            ("Supprimer hésitations et répétitions", \.removeFillers),
+        ]
+        for (title, keyPath) in corrections {
+            let correctionItem = actionItem(title) { [weak self] in
+                self?.changeConfig { $0.cleanupOptions[keyPath: keyPath].toggle() }
+            }
+            correctionItem.state = options[keyPath: keyPath] ? .on : .off
+            correctionItem.isEnabled = enabled
+            submenu.addItem(correctionItem)
+        }
+
+        item.submenu = submenu
+        return item
+    }
+
+    private func makeShortcutItem(config: Config) -> NSMenuItem {
+        let toggleMode = config.toggleMode?.value ?? false
+        let item = NSMenuItem(title: "Raccourci", action: nil, keyEquivalent: "")
+        setMenuIcon("keyboard", on: item)
+        setSubtitle("\(config.hotkeyDisplaySummary()) · \(toggleMode ? "Appuyer" : "Maintenir")", on: item)
+
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        submenu.addItem(sectionHeader("Mode du raccourci"))
+        let modes: [(String, Bool)] = [
+            ("Maintenir pour dicter", false),
+            ("Appuyer pour démarrer / arrêter", true),
+        ]
+        for (title, value) in modes {
+            let modeItem = actionItem(title) { [weak self] in
+                self?.changeConfig { $0.toggleMode = FlexBool(value) }
+            }
+            modeItem.state = toggleMode == value ? .on : .off
+            modeItem.isEnabled = !isRecording
+            submenu.addItem(modeItem)
+        }
+        submenu.addItem(.separator())
+        submenu.addItem(actionItem("Modifier le raccourci…") { [weak self] in
+            self?.openOptions(page: .controls)
+        })
+
+        item.submenu = submenu
+        return item
+    }
+
+    private func makeDuckingItem(config: Config) -> NSMenuItem {
+        let item = actionItem("Baisser le son pendant la dictée", symbol: "speaker.wave.2") { [weak self] in
+            self?.changeConfig {
+                $0.duckOtherAudioDuringRecording = FlexBool(!$0.duckOtherAudioEnabled)
+            }
+        }
+        item.state = config.duckOtherAudioEnabled ? .on : .off
+        item.toolTip = "Réduit le volume des autres apps pendant l'enregistrement, puis le rétablit."
+        if #available(macOS 14.0, *) {
+            item.isEnabled = !isRecording
+        } else {
+            item.isEnabled = false
+        }
+        return item
+    }
+
+    // MARK: - Actions
 
     @objc private func copyLastTranscription() {
         guard let text = lastTranscription else { return }
@@ -63,27 +429,89 @@ class StatusBarController: NSObject {
         }
     }
 
-    func updateDownloadProgress(_ text: String?, percent: Double = 0) {
-        downloadProgress = text
-        downloadPercent = percent
-        if case .downloading = state {
-            setIcon(StatusBarController.drawDownloadProgress(downloadPercent))
-        }
-        if let text = text, let item = stateMenuItem {
-            let config = Config.load()
-            let hotkeyDesc = config.hotkeySummary()
-            item.title = "\(text) (hotkey: \(hotkeyDesc))"
-        } else {
+    /// Saves a change the same way the settings window does, so both stay in sync.
+    private func changeConfig(_ edit: (inout Config) -> Void) {
+        var updated = Config.load()
+        edit(&updated)
+        do {
+            try updated.save()
+            onConfigChange?(updated)
             buildMenu()
+        } catch {
+            print("Error: could not save configuration: \(error.localizedDescription)")
+            NSAlert(error: error).runModal()
         }
     }
 
-    private static let displayDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
+    private func openOptions(page: SettingsPage?) {
+        // Let menu tracking finish before activating the settings window.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if self.optionsWindow == nil {
+                self.optionsWindow = OptionsWindowController { [weak self] config in
+                    self?.onConfigChange?(config)
+                }
+            }
+            guard let optionsWindow = self.optionsWindow else { return }
+            optionsWindow.refresh(config: Config.load(), isRecording: self.isRecording)
+            if let page { optionsWindow.show(page: page) }
+            NSApplication.shared.setActivationPolicy(.regular)
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            optionsWindow.showWindow(nil)
+            optionsWindow.window?.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private var isRecording: Bool {
+        if case .recording = state { return true }
+        return false
+    }
+
+    private var isIdle: Bool {
+        if case .idle = state { return true }
+        return false
+    }
+
+    private var isBusy: Bool {
+        switch state {
+        case .recording, .transcribing: true
+        default: false
+        }
+    }
+
+    private func actionItem(_ title: String, symbol: String? = nil, key: String = "",
+                            handler: @escaping () -> Void) -> NSMenuItem {
+        let target = MenuItemTarget(handler: handler)
+        menuItemTargets.append(target)
+        let item = NSMenuItem(title: title, action: #selector(MenuItemTarget.invoke), keyEquivalent: key)
+        item.target = target
+        if let symbol { setMenuIcon(symbol, on: item) }
+        return item
+    }
+
+    private func sectionHeader(_ title: String) -> NSMenuItem {
+        if #available(macOS 14.0, *) {
+            return NSMenuItem.sectionHeader(title: title)
+        }
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ])
+        item.isEnabled = false
+        return item
+    }
+
+    /// Shows secondary text under the title; older systems show it as a tooltip.
+    private func setSubtitle(_ subtitle: String, on item: NSMenuItem) {
+        if #available(macOS 14.4, *) {
+            item.subtitle = subtitle
+        } else {
+            item.toolTip = subtitle
+        }
+    }
 
     // Keep every menu icon at a consistent size and visible in light and dark mode.
     private func setMenuIcon(_ symbolName: String, on item: NSMenuItem) {
@@ -97,148 +525,42 @@ class StatusBarController: NSObject {
         }
     }
 
-    func buildMenu() {
-        menuItemTargets = []
-
-        let config = Config.load()
-        let hotkeyDesc = config.hotkeySummary()
-        if optionsWindow?.window?.isVisible == true {
-            optionsWindow?.refresh(config: config, isRecording: isRecording)
+    private static func selectedDevice(in devices: [AudioInputDevice], config: Config) -> AudioInputDevice? {
+        if let uid = config.audioInputDeviceUID {
+            return devices.first { $0.uid == uid }
         }
-
-        let menu = NSMenu()
-
-        let stateLabel: String
-        if let progress = downloadProgress {
-            stateLabel = progress
-        } else {
-            switch state {
-            case .idle: stateLabel = "Ready"
-            case .recording: stateLabel = "Recording..."
-            case .transcribing: stateLabel = "Transcribing..."
-            case .downloading: stateLabel = "Downloading model..."
-            case .waitingForMicrophonePermission: stateLabel = "Waiting for Microphone permission..."
-            case .waitingForPermission: stateLabel = "Waiting for Accessibility permission..."
-            case .copiedToClipboard: stateLabel = "Copied to clipboard"
-            case .error(let message): stateLabel = "Error: \(message)"
-            }
+        if let id = config.audioInputDeviceID {
+            return devices.first { $0.id == id }
         }
-        if case .waitingForMicrophonePermission = state {
-            let target = MenuItemTarget {
-                Permissions.openMicrophoneSettings()
-            }
-            menuItemTargets.append(target)
-            let stateItem = NSMenuItem(title: "Grant Microphone Permission...", action: #selector(MenuItemTarget.invoke), keyEquivalent: "")
-            stateItem.target = target
-            menu.addItem(stateItem)
-            stateMenuItem = stateItem
-        } else if case .waitingForPermission = state {
-            let target = MenuItemTarget {
-                Permissions.openAccessibilitySettings()
-            }
-            menuItemTargets.append(target)
-            let stateItem = NSMenuItem(title: "Grant Accessibility Permission...", action: #selector(MenuItemTarget.invoke), keyEquivalent: "")
-            stateItem.target = target
-            menu.addItem(stateItem)
-            stateMenuItem = stateItem
-        } else {
-            let stateItem = NSMenuItem(title: "\(stateLabel) (hotkey: \(hotkeyDesc))", action: nil, keyEquivalent: "")
-            stateItem.isEnabled = false
-            menu.addItem(stateItem)
-            stateMenuItem = stateItem
-        }
-
-        let stateSymbol: String
-        switch state {
-        case .idle: stateSymbol = "waveform"
-        case .recording: stateSymbol = "mic.fill"
-        case .transcribing: stateSymbol = "waveform"
-        case .downloading: stateSymbol = "arrow.down.circle"
-        case .waitingForMicrophonePermission, .waitingForPermission: stateSymbol = "lock"
-        case .copiedToClipboard: stateSymbol = "checkmark.circle"
-        case .error: stateSymbol = "exclamationmark.triangle"
-        }
-        if let stateMenuItem { setMenuIcon(stateSymbol, on: stateMenuItem) }
-
-        menu.addItem(NSMenuItem.separator())
-
-        let optionsItem = NSMenuItem(title: "Options...", action: #selector(openOptions(_:)), keyEquivalent: ",")
-        optionsItem.target = self
-        optionsItem.isEnabled = true
-        setMenuIcon("gearshape", on: optionsItem)
-        menu.addItem(optionsItem)
-
-        let lastText = lastTranscription
-        let copyTitle = copiedFeedback ? "Copied!" : "Copy Last Dictation"
-        let copyItem = NSMenuItem(title: copyTitle, action: lastText != nil && !copiedFeedback ? #selector(copyLastTranscription) : nil, keyEquivalent: "c")
-        copyItem.target = self
-        if lastText == nil || copiedFeedback { copyItem.isEnabled = copiedFeedback }
-        setMenuIcon(copiedFeedback ? "checkmark" : "doc.on.doc", on: copyItem)
-        menu.addItem(copyItem)
-
-        if Config.effectiveMaxRecordings(config.maxRecordings) > 0 {
-            let recordings = RecordingStore.listRecordings()
-            let reprocessItem = NSMenuItem(title: "Recent Recordings", action: nil, keyEquivalent: "")
-            let submenu = NSMenu()
-
-            if recordings.isEmpty {
-                let emptyItem = NSMenuItem(title: "No recordings", action: nil, keyEquivalent: "")
-                emptyItem.isEnabled = false
-                submenu.addItem(emptyItem)
-            } else {
-                for (index, recording) in recordings.enumerated() {
-                    let dateStr = StatusBarController.displayDateFormatter.string(from: recording.date)
-                    let label = "\(dateStr) (\(index + 1))"
-                    let target = MenuItemTarget { [weak self] in
-                        self?.reprocessHandler?(recording.url)
-                    }
-                    menuItemTargets.append(target)
-                    let item = NSMenuItem(title: label, action: #selector(MenuItemTarget.invoke), keyEquivalent: "")
-                    item.target = target
-                    submenu.addItem(item)
-                }
-            }
-
-            reprocessItem.submenu = submenu
-            setMenuIcon("clock.arrow.circlepath", on: reprocessItem)
-            menu.addItem(reprocessItem)
-        }
-
-        menu.addItem(NSMenuItem.separator())
-
-        let titleItem = NSMenuItem(title: "Local-Echo v\(LocalEcho.version)", action: nil, keyEquivalent: "")
-        titleItem.isEnabled = false
-        setMenuIcon("info.circle", on: titleItem)
-        menu.addItem(titleItem)
-
-        let quitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        setMenuIcon("power", on: quitItem)
-        menu.addItem(quitItem)
-
-        statusItem.menu = menu
+        return nil
     }
 
-    @objc private func openOptions(_ sender: NSMenuItem) {
-        // Let menu tracking finish before activating the settings window.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            if self.optionsWindow == nil {
-                self.optionsWindow = OptionsWindowController { [weak self] config in
-                    self?.onConfigChange?(config)
-                }
-            }
-            guard let optionsWindow = self.optionsWindow else { return }
-            optionsWindow.refresh(config: Config.load(), isRecording: self.isRecording)
-            NSApplication.shared.setActivationPolicy(.regular)
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            optionsWindow.showWindow(nil)
-            optionsWindow.window?.makeKeyAndOrderFront(nil)
-        }
+    private static func preview(_ text: String) -> String {
+        let singleLine = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        guard singleLine.count > 60 else { return "« \(singleLine) »" }
+        return "« \(singleLine.prefix(60).trimmingCharacters(in: .whitespaces))… »"
     }
 
-    private var isRecording: Bool {
-        if case .recording = state { return true }
-        return false
+    private static func duration(of url: URL) -> String? {
+        guard let file = try? AVAudioFile(forReading: url), file.fileFormat.sampleRate > 0 else { return nil }
+        let seconds = Int((Double(file.length) / file.fileFormat.sampleRate).rounded())
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
+    private static let menuLocale = Locale(identifier: "fr_FR")
+
+    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.locale = menuLocale
+        f.unitsStyle = .full
+        return f
+    }()
+
+    private static let displayDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = menuLocale
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
 }
