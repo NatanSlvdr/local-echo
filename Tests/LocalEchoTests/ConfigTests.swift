@@ -31,31 +31,31 @@ final class ConfigTests: XCTestCase {
     // MARK: - FlexBool decoding
 
     func testFlexBoolDecodesBool() throws {
-        let json = #"{"spokenPunctuation": true}"#.data(using: .utf8)!
+        let json = #"{"flag": true}"#.data(using: .utf8)!
         let wrapper = try JSONDecoder().decode(FlexBoolWrapper.self, from: json)
-        XCTAssertTrue(wrapper.spokenPunctuation.value)
+        XCTAssertTrue(wrapper.flag.value)
     }
 
     func testFlexBoolDecodesStringTrue() throws {
-        let json = #"{"spokenPunctuation": "yes"}"#.data(using: .utf8)!
+        let json = #"{"flag": "yes"}"#.data(using: .utf8)!
         let wrapper = try JSONDecoder().decode(FlexBoolWrapper.self, from: json)
-        XCTAssertTrue(wrapper.spokenPunctuation.value)
+        XCTAssertTrue(wrapper.flag.value)
     }
 
     func testFlexBoolDecodesStringFalse() throws {
-        let json = #"{"spokenPunctuation": "no"}"#.data(using: .utf8)!
+        let json = #"{"flag": "no"}"#.data(using: .utf8)!
         let wrapper = try JSONDecoder().decode(FlexBoolWrapper.self, from: json)
-        XCTAssertFalse(wrapper.spokenPunctuation.value)
+        XCTAssertFalse(wrapper.flag.value)
     }
 
     func testFlexBoolDecodesInt() throws {
-        let json1 = #"{"spokenPunctuation": 1}"#.data(using: .utf8)!
+        let json1 = #"{"flag": 1}"#.data(using: .utf8)!
         let wrapper1 = try JSONDecoder().decode(FlexBoolWrapper.self, from: json1)
-        XCTAssertTrue(wrapper1.spokenPunctuation.value)
+        XCTAssertTrue(wrapper1.flag.value)
 
-        let json0 = #"{"spokenPunctuation": 0}"#.data(using: .utf8)!
+        let json0 = #"{"flag": 0}"#.data(using: .utf8)!
         let wrapper0 = try JSONDecoder().decode(FlexBoolWrapper.self, from: json0)
-        XCTAssertFalse(wrapper0.spokenPunctuation.value)
+        XCTAssertFalse(wrapper0.flag.value)
     }
 
     // MARK: - Config JSON decoding
@@ -290,6 +290,15 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(config.modelSize, "large-v3-turbo")
     }
 
+    func testRemovedSettingsAreIgnoredAndNotSaved() throws {
+        let json = #"{"modelSize":"large-v3-turbo","spokenPunctuation":true}"#.data(using: .utf8)!
+        let saved = try JSONEncoder().encode(try Config.decode(from: json))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: saved) as? [String: Any])
+        for key in Config.removedKeys {
+            XCTAssertNil(object[key], key)
+        }
+    }
+
     func testLegacyEnglishModelMovesToMultilingualDefault() throws {
         let json = #"{"modelSize":"base.en","language":"en"}"#.data(using: .utf8)!
         XCTAssertEqual(try Config.decode(from: json).modelSize, "large-v3-turbo")
@@ -374,5 +383,5 @@ final class ConfigTests: XCTestCase {
 }
 
 private struct FlexBoolWrapper: Codable {
-    let spokenPunctuation: FlexBool
+    let flag: FlexBool
 }

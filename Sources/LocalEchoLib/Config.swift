@@ -7,7 +7,6 @@ public struct Config: Codable, Sendable {
     public var cleanupModel: String?
     public var cleanupOptions: CleanupOptions
     public var whisperPrompt: String?
-    public var spokenPunctuation: FlexBool?
     public var maxRecordings: Int?
     public var toggleMode: FlexBool?
     // The former duckOtherAudio key is ignored so affected installs restart with ducking off.
@@ -50,13 +49,15 @@ public struct Config: Codable, Sendable {
         case cleanupModel
         case cleanupOptions
         case whisperPrompt
-        case spokenPunctuation
         case maxRecordings
         case toggleMode
         case duckOtherAudioDuringRecording
         case audioInputDeviceID
         case audioInputDeviceUID
     }
+
+    /// Keys written by older versions. A file containing one is saved again without it.
+    static let removedKeys = ["language", "spokenPunctuation"]
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -76,7 +77,6 @@ public struct Config: Codable, Sendable {
         if cleanupModel != nil && cleanupModel != ModelCatalog.cleanup.id { cleanupModel = ModelCatalog.cleanup.id }
         self.cleanupOptions = try c.decodeIfPresent(CleanupOptions.self, forKey: .cleanupOptions) ?? .defaults
         self.whisperPrompt = try c.decodeIfPresent(String.self, forKey: .whisperPrompt)
-        self.spokenPunctuation = try c.decodeIfPresent(FlexBool.self, forKey: .spokenPunctuation)
         self.maxRecordings = try c.decodeIfPresent(Int.self, forKey: .maxRecordings)
         self.toggleMode = try c.decodeIfPresent(FlexBool.self, forKey: .toggleMode)
         self.duckOtherAudioDuringRecording = try c.decodeIfPresent(FlexBool.self, forKey: .duckOtherAudioDuringRecording)
@@ -93,7 +93,6 @@ public struct Config: Codable, Sendable {
         try c.encode(cleanupModel ?? "off", forKey: .cleanupModel)
         try c.encode(cleanupOptions, forKey: .cleanupOptions)
         try c.encodeIfPresent(whisperPrompt, forKey: .whisperPrompt)
-        try c.encodeIfPresent(spokenPunctuation, forKey: .spokenPunctuation)
         try c.encodeIfPresent(maxRecordings, forKey: .maxRecordings)
         try c.encodeIfPresent(toggleMode, forKey: .toggleMode)
         try c.encodeIfPresent(duckOtherAudioDuringRecording, forKey: .duckOtherAudioDuringRecording)
@@ -108,7 +107,6 @@ public struct Config: Codable, Sendable {
         cleanupModel: String? = ModelCatalog.cleanup.id,
         cleanupOptions: CleanupOptions = .defaults,
         whisperPrompt: String? = nil,
-        spokenPunctuation: FlexBool?,
         maxRecordings: Int?,
         toggleMode: FlexBool?,
         duckOtherAudioDuringRecording: FlexBool? = nil,
@@ -123,7 +121,6 @@ public struct Config: Codable, Sendable {
         self.cleanupModel = cleanupModel
         self.cleanupOptions = cleanupOptions
         self.whisperPrompt = whisperPrompt
-        self.spokenPunctuation = spokenPunctuation
         self.maxRecordings = maxRecordings
         self.toggleMode = toggleMode
         self.duckOtherAudioDuringRecording = duckOtherAudioDuringRecording
@@ -151,7 +148,6 @@ public struct Config: Codable, Sendable {
         modelPath: nil,
         modelSize: "large-v3-turbo",
         whisperPrompt: nil,
-        spokenPunctuation: FlexBool(false),
         maxRecordings: nil,
         toggleMode: FlexBool(false),
         duckOtherAudioDuringRecording: FlexBool(false)
@@ -184,8 +180,9 @@ public struct Config: Codable, Sendable {
         do {
             var config = try JSONDecoder().decode(Config.self, from: data)
             let resolved = Config.supportedModel(config.modelSize)
-            let hasLegacyLanguage = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["language"] != nil
-            if resolved != config.modelSize || source != configFile || hasLegacyLanguage {
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let hasRemovedKeys = removedKeys.contains { object?[$0] != nil }
+            if resolved != config.modelSize || source != configFile || hasRemovedKeys {
                 config.modelSize = resolved
                 try? config.save()
             }

@@ -338,8 +338,8 @@ enum SettingsPage: String, Hashable, CaseIterable {
     var searchTerms: String {
         switch self {
         case .general: "vue d'ensemble dicter essayer tester comment autorisations accessibilité microphone permission"
-        case .transcription: "modèle reconnaissance vocale ponctuation taille téléchargement langue"
-        case .cleanup: "nettoyage correction texte modèle mise en forme paragraphes liste hésitations"
+        case .transcription: "modèle reconnaissance vocale taille téléchargement langue"
+        case .cleanup: "nettoyage correction texte modèle mise en forme ponctuation majuscules paragraphes liste hésitations"
         case .audio: "microphone entrée son volume baisser enregistrements conserver"
         case .controls: "enregistrement raccourci clavier touches combinaison maintenir appuyer fn globe"
         case .advanced: "configuration fichier ouvrir recharger réinitialiser défaut"
@@ -533,22 +533,6 @@ private struct SettingsView: View {
                 } else {
                     Text("Du plus léger au plus lourd. Tous les modèles sont téléchargés et fonctionnent hors ligne.")
                 }
-            }
-
-            Section {
-                Toggle(isOn: Binding(
-                    get: { settings.config.spokenPunctuation?.value ?? false },
-                    set: { enabled in settings.change { $0.spokenPunctuation = FlexBool(enabled) } }
-                )) {
-                    Text("Interpréter la ponctuation dictée")
-                    Text("Retire la ponctuation automatique et n'ajoute que celle que vous prononcez, en anglais.")
-                }
-                .toggleStyle(.switch)
-                ExampleCard(said: "hello comma how are you question mark", result: "hello, how are you?")
-            } header: {
-                Text("Ponctuation")
-            } footer: {
-                Text("Mots reconnus : comma, period, question mark, exclamation mark, colon, semicolon, new line, new paragraph, open quote, close quote.")
             }
         }
     }

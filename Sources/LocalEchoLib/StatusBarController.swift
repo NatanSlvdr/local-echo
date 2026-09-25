@@ -267,12 +267,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
             submenu.addItem(modelItem)
         }
 
-        submenu.addItem(sectionHeader("Ponctuation"))
-        let punctuationItem = actionItem("Interpréter la ponctuation dictée") { [weak self] in
-            self?.changeConfig { $0.spokenPunctuation = FlexBool(!($0.spokenPunctuation?.value ?? false)) }
-        }
-        punctuationItem.state = config.spokenPunctuation?.value == true ? .on : .off
-        submenu.addItem(punctuationItem)
         submenu.addItem(.separator())
         submenu.addItem(actionItem("Gérer les modèles…") { [weak self] in
             self?.openOptions(page: .transcription)

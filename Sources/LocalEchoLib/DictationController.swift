@@ -105,7 +105,6 @@ final class DictationController {
 
         // Capture settings before leaving the main actor. A config reload affects the next job.
         let transcriber = self.transcriber
-        let spokenPunctuation = config.spokenPunctuation?.value ?? false
         let cleanupEnabled = config.cleanupModel != nil
         let cleanupOptions = config.cleanupOptions
         let maxRecordings = Config.effectiveMaxRecordings(config.maxRecordings)
@@ -115,8 +114,7 @@ final class DictationController {
             }
             let result = Result { () -> String in
                 try TranscriptionPipeline.run(transcriber: transcriber, audioURL: audioURL,
-                                              spokenPunctuation: spokenPunctuation, cleanupEnabled: cleanupEnabled,
-                                              cleanupOptions: cleanupOptions)
+                                              cleanupEnabled: cleanupEnabled, cleanupOptions: cleanupOptions)
             }
             if maxRecordings > 0 { RecordingStore.prune(maxCount: maxRecordings) }
             DispatchQueue.main.async { self.finishTranscription(result) }
@@ -169,14 +167,12 @@ final class DictationController {
         statusBar.buildMenu()
 
         let transcriber = self.transcriber
-        let spokenPunctuation = config.spokenPunctuation?.value ?? false
         let cleanupEnabled = config.cleanupModel != nil
         let cleanupOptions = config.cleanupOptions
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             let result = Result { () -> String in
                 try TranscriptionPipeline.run(transcriber: transcriber, audioURL: audioURL,
-                                              spokenPunctuation: spokenPunctuation, cleanupEnabled: cleanupEnabled,
-                                              cleanupOptions: cleanupOptions)
+                                              cleanupEnabled: cleanupEnabled, cleanupOptions: cleanupOptions)
             }
             DispatchQueue.main.async { self.finishReprocessing(result) }
         }
@@ -216,14 +212,8 @@ final class DictationController {
 /// Applies optional text stages after speech recognition for both dictation and reprocessing.
 enum TranscriptionPipeline {
     static func run(transcriber: Transcriber, audioURL: URL,
-                    spokenPunctuation: Bool, cleanupEnabled: Bool,
-                    cleanupOptions: CleanupOptions) throws -> String {
-        let raw = try transcriber.transcribe(audioURL: audioURL)
-        // Match the former Whisper suppress-regex behavior across all speech backends.
-        let unpunctuated = spokenPunctuation
-            ? raw.replacingOccurrences(of: #"[,\.?!;:\-—]"#, with: "", options: .regularExpression)
-            : raw
-        let text = spokenPunctuation ? TextPostProcessor.process(unpunctuated) : raw
+                    cleanupEnabled: Bool, cleanupOptions: CleanupOptions) throws -> String {
+        let text = try transcriber.transcribe(audioURL: audioURL)
         guard cleanupEnabled, cleanupOptions.hasEdits, !text.isEmpty else { return text }
         do {
             return try ModelRuntime.shared.clean(text, options: cleanupOptions)
