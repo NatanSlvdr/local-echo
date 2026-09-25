@@ -176,6 +176,8 @@ let args = CommandLine.arguments
 let rawCommand = args.count > 1 ? args[1] : nil
 let command: String? = {
     if let r = rawCommand, r.hasPrefix("-psn_") { return "start" }
+    // Finder, Launchpad, and login items open the app without arguments.
+    if rawCommand == nil, AppBundleLaunch.isExecutableInsideAppBundle(args[0]) { return "start" }
     return rawCommand
 }()
 

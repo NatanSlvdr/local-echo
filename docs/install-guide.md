@@ -30,7 +30,7 @@ Restart the app after changing settings.
 
 Local-Echo needs Microphone access to record speech and Accessibility access to detect the hotkey and insert text. macOS prompts for these permissions when the app starts. Grant both to **Local-Echo**.
 
-If you missed the Accessibility prompt, open **System Settings → Privacy & Security → Accessibility** and enable Local-Echo. If it is not listed, add `~/Library/Application Support/Local-Echo/dev/Local-Echo.app`. For Microphone access, use **System Settings → Privacy & Security → Microphone**.
+If you missed the Accessibility prompt, open **System Settings → Privacy & Security → Accessibility** and enable Local-Echo. If it is not listed, add `/Applications/Local-Echo.app` for an installed release, or `~/Library/Application Support/Local-Echo/dev/Local-Echo.app` for a development build. For Microphone access, use **System Settings → Privacy & Security → Microphone**.
 
 On non-English macOS installations, the Settings names are translated; the app name **Local-Echo** stays the same.
 

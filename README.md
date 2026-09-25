@@ -11,6 +11,18 @@
 
 <p align="center">Powered by whisper.cpp and MLX on Apple Silicon.</p>
 
+## Install
+
+Local-Echo requires an Apple Silicon Mac with macOS 13 or later. To install or update it, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NatanSlvdr/local-echo/main/scripts/install.sh | bash
+```
+
+The script downloads the latest [release](https://github.com/NatanSlvdr/local-echo/releases), checks its checksum, installs **Local-Echo.app** in `/Applications` (or `~/Applications` when `/Applications` is not writable), and starts it. Set `LOCAL_ECHO_VERSION=0.46.0` before `bash` to install a specific version.
+
+You can also download the zip from the releases page and move the app to **Applications** yourself. The app is not notarized, so macOS blocks the first launch of a browser download: open it once, then choose **System Settings → Privacy & Security → Open Anyway**.
+
 ## Run from source
 
 Local-Echo requires an Apple Silicon Mac, macOS 13 or later, the Xcode Command Line Tools, Git, CMake, and [`uv`](https://docs.astral.sh/uv/getting-started/installation/). The development script builds `whisper-cli` and `whisper-server` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and bundles the runtimes in the app. The selected speech and cleanup models download on first run.
@@ -142,6 +154,17 @@ open -a "$APP_DIR" --args start
 ```
 
 `bundle-app.sh` copies the whisper.cpp binaries, `uv`, and the MLX worker into the app. The selected speech and cleanup models download on first launch to `~/.config/local-echo/models/`.
+
+## Publish a release
+
+From a clean `main` that matches `origin/main`, with the [GitHub CLI](https://cli.github.com) logged in, run:
+
+```bash
+bash scripts/release.sh           # current version if it has no tag yet, otherwise the next patch
+bash scripts/release.sh minor     # or patch, major, or an explicit version such as 0.47.0
+```
+
+The script sets the version in `Sources/LocalEchoLib/Version.swift`, builds the optimized app, and zips it into `.build/dist/`. It then commits the version change, pushes a `vX.Y.Z` tag, and creates a GitHub release with the zip, its SHA-256 checksum, and generated notes. It signs with a Developer ID or Apple Development identity when one is installed. Set `LOCAL_ECHO_CODESIGN_IDENTITY` to choose another identity. Add `--dry-run` to build the zip without committing, tagging, or publishing.
 
 ## Support
 
