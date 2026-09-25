@@ -2,13 +2,22 @@ import Darwin
 import Foundation
 
 /// Installs the Python MLX runtime and keeps each loaded model alive for 15 idle minutes.
+/// Each model has its own lock, so loading or running one model never waits for another.
 public final class ModelRuntime: @unchecked Sendable {
     public static let shared = ModelRuntime()
     public static let idleTimeout: TimeInterval = 15 * 60
 
-    private let lock = NSRecursiveLock()
-    private var sessions: [String: ModelSession] = [:]
-    private var generations: [String: Int] = [:]
+    /// `lock` serializes loading and requests for one model. `session` and `generation` are guarded by the runtime lock.
+    private final class Slot: @unchecked Sendable {
+        let lock = NSLock()
+        var session: ModelSession?
+        var generation = 0
+    }
+
+    private let lock = NSLock()
+    private var slots: [String: Slot] = [:]
+    /// Incremented by `stopAll`, so a session that finishes loading afterwards is discarded.
+    private var epoch = 0
 
     private init() {}
 
@@ -23,215 +32,111 @@ public final class ModelRuntime: @unchecked Sendable {
         return try use(model: ModelCatalog.cleanup, request: request, prompt: nil)
     }
 
-    private func use(model: ModelCatalog.Model, request: [String: String], prompt: String?) throws -> String {
-        lock.lock()
-        defer { lock.unlock() }
-        let session: ModelSession
-        if let current = sessions[model.id], current.isRunning {
-            session = current
-        } else {
-            session = try ModelSession(model: model)
-            sessions[model.id] = session
+    /// Starts an installed model in the background so the next request does not wait for it to load.
+    public func warmUp(_ model: ModelCatalog.Model) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard model.isInstalled else { return }
+            let slot = self.slot(for: model.id)
+            slot.lock.lock()
+            defer { slot.lock.unlock() }
+            do {
+                _ = try self.runningSession(for: model, in: slot)
+                self.scheduleExpiry(of: slot)
+            } catch {
+                fputs("Could not preload \(model.id): \(error.localizedDescription)\n", stderr)
+            }
         }
+    }
+
+    /// Stops every model process without waiting for requests in progress; those requests fail.
+    public func stopAll() {
+        lock.lock()
+        epoch += 1
+        let sessions = slots.values.compactMap(\.session)
+        for slot in slots.values {
+            slot.session = nil
+            slot.generation += 1
+        }
+        lock.unlock()
+        for session in sessions { session.terminate() }
+    }
+
+    private func use(model: ModelCatalog.Model, request: [String: String], prompt: String?) throws -> String {
+        let slot = slot(for: model.id)
+        slot.lock.lock()
+        defer { slot.lock.unlock() }
+        let session = try runningSession(for: model, in: slot)
         do {
             let result = try session.request(request, prompt: prompt)
-            let generation = (generations[model.id] ?? 0) + 1
-            generations[model.id] = generation
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.idleTimeout) { [weak self] in
-                self?.expire(modelID: model.id, generation: generation)
-            }
+            scheduleExpiry(of: slot)
             return result
         } catch {
-            session.stop()
-            sessions.removeValue(forKey: model.id)
+            discard(session, from: slot)
             throw error
         }
     }
 
-    private func expire(modelID: String, generation: Int) {
+    private func slot(for modelID: String) -> Slot {
         lock.lock()
         defer { lock.unlock() }
-        guard generations[modelID] == generation else { return }
-        sessions.removeValue(forKey: modelID)?.stop()
+        if let slot = slots[modelID] { return slot }
+        let slot = Slot()
+        slots[modelID] = slot
+        return slot
     }
 
-    public func stopAll() {
+    /// Returns the model's running session, starting one if needed. Call with `slot.lock` held.
+    private func runningSession(for model: ModelCatalog.Model, in slot: Slot) throws -> ModelSession {
         lock.lock()
-        defer { lock.unlock() }
-        for session in sessions.values { session.stop() }
-        sessions.removeAll()
-        generations.removeAll()
+        let current = slot.session
+        let startEpoch = epoch
+        lock.unlock()
+        if let current {
+            if current.isRunning { return current }
+            discard(current, from: slot)
+        }
+
+        let session = try ModelSession(model: model)
+        lock.lock()
+        let stopped = epoch != startEpoch
+        if !stopped { slot.session = session }
+        lock.unlock()
+        if stopped {
+            session.stop()
+            throw ModelRuntimeError.workerFailed("Model runtime stopped")
+        }
+        return session
     }
-}
 
-/// A persistent process for one model. Whisper uses its loopback server; MLX uses JSON lines.
-private final class ModelSession {
-    let process = Process()
-    private var input: Pipe?
-    private var output: Pipe?
-    private var port: UInt16?
-    var isRunning: Bool { process.isRunning }
+    private func discard(_ session: ModelSession, from slot: Slot) {
+        lock.lock()
+        if slot.session === session { slot.session = nil }
+        lock.unlock()
+        session.stop()
+    }
 
-    init(model: ModelCatalog.Model) throws {
-        switch model.backend {
-        case .whisper:
-            guard let binary = Transcriber.findWhisperServerBinary(),
-                  let path = Transcriber.findModel(modelSize: model.id) else {
-                throw ModelRuntimeError.missingModel(model.id)
-            }
-            let port = try Self.availablePort()
-            self.port = port
-            process.executableURL = URL(fileURLWithPath: binary)
-            process.arguments = ["--model", path, "--host", "127.0.0.1", "--port", String(port),
-                                 "--language", "auto", "--no-timestamps", "--max-context", "0"]
-            process.standardOutput = FileHandle.standardError
-            process.standardError = FileHandle.standardError
-            try process.run()
-            try waitForServer(port: port)
-        case .qwenASR, .parakeet, .cleanup:
-            guard ModelDownloader.modelExists(model.id) else { throw ModelRuntimeError.missingModel(model.id) }
-            let stdin = Pipe()
-            let stdout = Pipe()
-            input = stdin
-            output = stdout
-            process.executableURL = try PythonRuntime.pythonURL()
-            process.arguments = [PythonRuntime.workerURL().path, "serve", model.backend.rawValue, model.directory.path]
-            process.standardInput = stdin
-            process.standardOutput = stdout
-            process.standardError = FileHandle.standardError
-            try process.run()
-            let ready: [String: Any]
-            do {
-                ready = try readMessage()
-            } catch {
-                stop()
-                throw error
-            }
-            guard ready["ready"] as? Bool == true else { throw ModelRuntimeError.workerFailed("Model did not become ready") }
+    private func scheduleExpiry(of slot: Slot) {
+        lock.lock()
+        slot.generation += 1
+        let generation = slot.generation
+        lock.unlock()
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.idleTimeout) { [weak self] in
+            self?.expire(slot, generation: generation)
         }
     }
 
-    func request(_ values: [String: String], prompt: String?) throws -> String {
-        if let port {
-            return try whisperRequest(port: port, audioPath: values["audio"] ?? "", prompt: prompt)
+    private func expire(_ slot: Slot, generation: Int) {
+        // Waits for a request in progress; that request makes this expiry stale.
+        slot.lock.lock()
+        defer { slot.lock.unlock() }
+        lock.lock()
+        guard slot.generation == generation, let session = slot.session else {
+            lock.unlock()
+            return
         }
-        guard let input, process.isRunning else { throw ModelRuntimeError.workerFailed("Model worker stopped") }
-        let data = try JSONSerialization.data(withJSONObject: values)
-        input.fileHandleForWriting.write(data + Data([0x0a]))
-        let response = try readMessage()
-        if let error = response["error"] as? String { throw ModelRuntimeError.workerFailed(error) }
-        guard let text = response["text"] as? String else { throw ModelRuntimeError.workerFailed("Invalid model response") }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    func stop() {
-        if process.isRunning {
-            process.terminate()
-            process.waitUntilExit()
-        }
-        input?.fileHandleForWriting.closeFile()
-        output?.fileHandleForReading.closeFile()
-    }
-
-    private func readMessage() throws -> [String: Any] {
-        guard let handle = output?.fileHandleForReading else { throw ModelRuntimeError.workerFailed("No model response") }
-        var data = Data()
-        while true {
-            guard let byte = try handle.read(upToCount: 1), !byte.isEmpty else {
-                throw ModelRuntimeError.workerFailed("Model worker exited")
-            }
-            if byte[0] == 0x0a { break }
-            data.append(byte)
-        }
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw ModelRuntimeError.workerFailed("Invalid model response")
-        }
-        return object
-    }
-
-    private func waitForServer(port: UInt16) throws {
-        for _ in 0..<150 {
-            if !process.isRunning { throw ModelRuntimeError.workerFailed("whisper-server exited") }
-            if let url = URL(string: "http://127.0.0.1:\(port)/health"),
-               let (_, status) = try? Self.http(URLRequest(url: url)), status == 200 { return }
-            Thread.sleep(forTimeInterval: 0.1)
-        }
-        stop()
-        throw ModelRuntimeError.workerFailed("whisper-server did not start")
-    }
-
-    private func whisperRequest(port: UInt16, audioPath: String, prompt: String?) throws -> String {
-        let boundary = "LocalEcho\(UUID().uuidString)"
-        var body = Data()
-        func field(_ name: String, _ value: String) {
-            body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
-        }
-        field("response_format", "text")
-        field("language", "auto")
-        field("no_timestamps", "true")
-        field("max_context", "0")
-        if let prompt, !prompt.isEmpty { field("prompt", prompt) }
-        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\n".utf8))
-        body.append(try Data(contentsOf: URL(fileURLWithPath: audioPath)))
-        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/inference")!)
-        request.httpMethod = "POST"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-        request.timeoutInterval = 300
-        let (data, status) = try Self.http(request)
-        guard status == 200, let text = String(data: data, encoding: .utf8) else {
-            throw ModelRuntimeError.workerFailed("Whisper server returned HTTP \(status)")
-        }
-        return Transcriber.stripWhisperMarkers(text)
-    }
-
-    private static func http(_ request: URLRequest) throws -> (Data, Int) {
-        let semaphore = DispatchSemaphore(value: 0)
-        let result = LockedHTTPResult()
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            result.store(data: data, status: (response as? HTTPURLResponse)?.statusCode, error: error)
-            semaphore.signal()
-        }.resume()
-        semaphore.wait()
-        return try result.value()
-    }
-
-    private static func availablePort() throws -> UInt16 {
-        let fd = socket(AF_INET, SOCK_STREAM, 0)
-        guard fd >= 0 else { throw ModelRuntimeError.workerFailed("Could not allocate loopback port") }
-        defer { close(fd) }
-        var address = sockaddr_in()
-        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_addr = in_addr(s_addr: in_addr_t(0x0100007f))
-        let bound = withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-        }
-        guard bound == 0 else { throw ModelRuntimeError.workerFailed("Could not bind loopback port") }
-        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let named = withUnsafeMutablePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }
-        }
-        guard named == 0 else { throw ModelRuntimeError.workerFailed("Could not read loopback port") }
-        return UInt16(bigEndian: address.sin_port)
-    }
-}
-
-private final class LockedHTTPResult: @unchecked Sendable {
-    private let lock = NSLock()
-    private var data: Data?
-    private var status: Int?
-    private var error: Error?
-    func store(data: Data?, status: Int?, error: Error?) {
-        lock.lock(); defer { lock.unlock() }
-        self.data = data; self.status = status; self.error = error
-    }
-    func value() throws -> (Data, Int) {
-        lock.lock(); defer { lock.unlock() }
-        if let error { throw error }
-        guard let data, let status else { throw ModelRuntimeError.workerFailed("No HTTP response") }
-        return (data, status)
+        slot.session = nil
+        lock.unlock()
+        session.stop()
     }
 }
 

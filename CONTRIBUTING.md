@@ -13,7 +13,10 @@ Use `bash scripts/dev.sh release` to check an optimized build through the same a
 ## Project structure
 
 - `Sources/LocalEchoLib/` contains the app lifecycle, audio capture, hotkeys, transcription, and configuration.
-- `DictationController` owns the recording and transcription flow; `AppDelegate` wires it to permissions, hotkeys, and the menu bar.
+- `ConfigStore` holds the running app's configuration. The menu, the settings window, and dictation change it through `update`, which saves the file and notifies `AppDelegate`.
+- `DictationController` owns the recording flow; each recording becomes a `TranscriptionJob`, which runs the speech model and optional cleanup. `AppDelegate` wires dictation to permissions, hotkeys, and the menu bar.
+- `ModelCatalog` describes every model: its labels, worker backend, repository, and installed files. `ModelDownloader` installs models, and `ModelRuntime` keeps loaded models running in `ModelSession` processes.
+- `Sources/LocalEchoLib/Settings/` contains the settings window: `SettingsStore`, one file per page, and shared components.
 - `Sources/LocalEcho/` contains the CLI entry point and app bundle launch logic.
 - `Resources/AppIcon.icns` is copied into the app bundle by `scripts/bundle-app.sh`.
 - `Tests/LocalEchoTests/` contains Swift unit tests.

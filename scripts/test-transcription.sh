@@ -86,31 +86,17 @@ else
     fail "Expected number words in output, got: $OUTPUT"
 fi
 
-# Test 3: Transcriber class via the bundled app
+# Test 3: The app finds its bundled whisper-server
 BIN="$APP_DIR/Contents/MacOS/local-echo"
 if [ ! -x "$BIN" ]; then
     BIN=".build/release/local-echo"
 fi
 if [ -x "$BIN" ]; then
-    if $BIN status 2>&1 | grep -q "Whisper CLI: yes"; then
-        pass "Binary detects whisper-cli"
+    if $BIN status 2>&1 | grep -q "Whisper server: yes"; then
+        pass "Binary detects whisper-server"
     else
-        fail "Binary should detect whisper-cli"
+        fail "Binary should detect whisper-server"
     fi
-fi
-
-# Test 4: Post-processing pipeline
-# Transcribe and run through post-processor by checking the full pipeline
-say -o "$TMPDIR_TEST/punct.aiff" "Hello period how are you question mark"
-afconvert -f WAVE -d LEI16@16000 -c 1 "$TMPDIR_TEST/punct.aiff" "$TMPDIR_TEST/punct.wav"
-
-OUTPUT=$($WHISPER_BIN -m "$MODEL_PATH" -f "$TMPDIR_TEST/punct.wav" --no-timestamps -nt 2>/dev/null || true)
-OUTPUT_LOWER=$(echo "$OUTPUT" | tr '[:upper:]' '[:lower:]')
-
-if echo "$OUTPUT_LOWER" | grep -q "hello"; then
-    pass "Punctuation test audio transcribed"
-else
-    fail "Punctuation test transcription failed: $OUTPUT"
 fi
 
 echo ""

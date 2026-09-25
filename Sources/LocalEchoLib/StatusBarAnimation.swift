@@ -28,6 +28,7 @@ extension StatusBarController {
     // MARK: - Recording animation: wave
 
     private static let waveFrameCount = 30
+    private static let waveFrames = prerenderWaveFrames()
 
     private static func prerenderWaveFrames() -> [NSImage] {
         let count = waveFrameCount
@@ -69,7 +70,7 @@ extension StatusBarController {
 
     private func startRecordingAnimation() {
         animationFrame = 0
-        animationFrames = StatusBarController.prerenderWaveFrames()
+        animationFrames = StatusBarController.waveFrames
         setIcon(animationFrames[0])
 
         animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
@@ -84,6 +85,7 @@ extension StatusBarController {
     // MARK: - Transcribing animation: smooth wave dots
 
     private static let transcribeFrameCount = 30
+    private static let transcribeFrames = prerenderTranscribeFrames()
 
     private static func prerenderTranscribeFrames() -> [NSImage] {
         let count = transcribeFrameCount
@@ -118,7 +120,7 @@ extension StatusBarController {
 
     private func startTranscribingAnimation() {
         animationFrame = 0
-        animationFrames = StatusBarController.prerenderTranscribeFrames()
+        animationFrames = StatusBarController.transcribeFrames
         setIcon(animationFrames[0])
 
         animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
@@ -133,6 +135,7 @@ extension StatusBarController {
     // MARK: - Downloading: progress ring
 
     private static let downloadPulseFrameCount = 30
+    private static let downloadPulseFrames = prerenderDownloadPulseFrames()
 
     private static func prerenderDownloadPulseFrames() -> [NSImage] {
         let count = downloadPulseFrameCount
@@ -145,18 +148,15 @@ extension StatusBarController {
 
     private func startDownloadingAnimation() {
         animationFrame = 0
-        animationFrames = StatusBarController.prerenderDownloadPulseFrames()
-        setIcon(animationFrames[0])
+        animationFrames = StatusBarController.downloadPulseFrames
+        setIcon(downloadPercent > 0 ? StatusBarController.drawDownloadProgress(downloadPercent) : animationFrames[0])
 
         animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
-                if self.downloadPercent > 0 {
-                    self.setIcon(StatusBarController.drawDownloadProgress(self.downloadPercent))
-                } else {
-                    self.animationFrame = (self.animationFrame + 1) % StatusBarController.downloadPulseFrameCount
-                    self.setIcon(self.animationFrames[self.animationFrame])
-                }
+                // Once progress is known, updateDownloadProgress redraws the ring only when the percent changes.
+                guard let self, self.downloadPercent == 0 else { return }
+                self.animationFrame = (self.animationFrame + 1) % StatusBarController.downloadPulseFrameCount
+                self.setIcon(self.animationFrames[self.animationFrame])
             }
         }
     }

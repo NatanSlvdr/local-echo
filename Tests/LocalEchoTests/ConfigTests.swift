@@ -31,31 +31,31 @@ final class ConfigTests: XCTestCase {
     // MARK: - FlexBool decoding
 
     func testFlexBoolDecodesBool() throws {
-        let json = #"{"spokenPunctuation": true}"#.data(using: .utf8)!
+        let json = #"{"flag": true}"#.data(using: .utf8)!
         let wrapper = try JSONDecoder().decode(FlexBoolWrapper.self, from: json)
-        XCTAssertTrue(wrapper.spokenPunctuation.value)
+        XCTAssertTrue(wrapper.flag.value)
     }
 
     func testFlexBoolDecodesStringTrue() throws {
-        let json = #"{"spokenPunctuation": "yes"}"#.data(using: .utf8)!
+        let json = #"{"flag": "yes"}"#.data(using: .utf8)!
         let wrapper = try JSONDecoder().decode(FlexBoolWrapper.self, from: json)
-        XCTAssertTrue(wrapper.spokenPunctuation.value)
+        XCTAssertTrue(wrapper.flag.value)
     }
 
     func testFlexBoolDecodesStringFalse() throws {
-        let json = #"{"spokenPunctuation": "no"}"#.data(using: .utf8)!
+        let json = #"{"flag": "no"}"#.data(using: .utf8)!
         let wrapper = try JSONDecoder().decode(FlexBoolWrapper.self, from: json)
-        XCTAssertFalse(wrapper.spokenPunctuation.value)
+        XCTAssertFalse(wrapper.flag.value)
     }
 
     func testFlexBoolDecodesInt() throws {
-        let json1 = #"{"spokenPunctuation": 1}"#.data(using: .utf8)!
+        let json1 = #"{"flag": 1}"#.data(using: .utf8)!
         let wrapper1 = try JSONDecoder().decode(FlexBoolWrapper.self, from: json1)
-        XCTAssertTrue(wrapper1.spokenPunctuation.value)
+        XCTAssertTrue(wrapper1.flag.value)
 
-        let json0 = #"{"spokenPunctuation": 0}"#.data(using: .utf8)!
+        let json0 = #"{"flag": 0}"#.data(using: .utf8)!
         let wrapper0 = try JSONDecoder().decode(FlexBoolWrapper.self, from: json0)
-        XCTAssertFalse(wrapper0.spokenPunctuation.value)
+        XCTAssertFalse(wrapper0.flag.value)
     }
 
     // MARK: - Config JSON decoding
@@ -290,6 +290,16 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(config.modelSize, "large-v3-turbo")
     }
 
+    func testRemovedSettingsAreIgnoredAndNotSaved() throws {
+        let json = #"{"modelSize":"large-v3-turbo","spokenPunctuation":true,"modelPath":"/tmp/model.bin"}"#
+            .data(using: .utf8)!
+        let saved = try JSONEncoder().encode(try Config.decode(from: json))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: saved) as? [String: Any])
+        for key in Config.removedKeys {
+            XCTAssertNil(object[key], key)
+        }
+    }
+
     func testLegacyEnglishModelMovesToMultilingualDefault() throws {
         let json = #"{"modelSize":"base.en","language":"en"}"#.data(using: .utf8)!
         XCTAssertEqual(try Config.decode(from: json).modelSize, "large-v3-turbo")
@@ -316,6 +326,61 @@ final class ConfigTests: XCTestCase {
     func testModifierFlagsIgnoresUnknown() {
         let config = HotkeyConfig(keyCode: 49, modifiers: ["cmd", "bogus"])
         XCTAssertEqual(config.modifierFlags, UInt64(1 << 20))
+    }
+
+    func testModifierNamesFollowRecordingOrder() {
+        XCTAssertEqual(HotkeyConfig.modifierNames(in: [.function, .control, .command]), ["cmd", "ctrl", "fn"])
+    }
+
+    func testModifierFlagForModifierKeysOnly() {
+        XCTAssertEqual(HotkeyConfig.modifierFlag(forKeyCode: 61), .option)
+        XCTAssertEqual(HotkeyConfig.modifierFlag(forKeyCode: 63), .function)
+        XCTAssertNil(HotkeyConfig.modifierFlag(forKeyCode: 49))
+    }
+
+    // MARK: - Shared summaries
+
+    func testToggleModeSetterAndShortcutSummary() {
+        var config = Config.defaultConfig
+        XCTAssertTrue(config.shortcutSummary.hasSuffix("Maintenir"))
+        config.usesToggleMode = true
+        XCTAssertEqual(config.toggleMode?.value, true)
+        XCTAssertTrue(config.shortcutSummary.hasSuffix("Appuyer"))
+    }
+
+    func testCleanupSummary() {
+        var config = Config.defaultConfig
+        XCTAssertEqual(config.cleanupSummary, "Mise en forme légère")
+        config.cleanupModel = nil
+        XCTAssertEqual(config.cleanupSummary, "Désactivé")
+    }
+
+    // MARK: - Selected microphone
+
+    private let devices = [
+        AudioInputDevice(id: 10, uid: "built-in", name: "MacBook", isDefault: true),
+        AudioInputDevice(id: 20, uid: "usb", name: "USB", isDefault: false),
+    ]
+
+    func testSelectedDeviceUsesUID() {
+        var config = Config.defaultConfig
+        config.audioInputDeviceUID = "usb"
+        config.audioInputDeviceID = 10
+        XCTAssertEqual(config.selectedInputDevice(in: devices)?.id, 20)
+    }
+
+    func testMissingUIDFallsBackToSystemDefaultInsteadOfStaleID() {
+        var config = Config.defaultConfig
+        config.audioInputDeviceUID = "unplugged"
+        config.audioInputDeviceID = 20
+        XCTAssertNil(config.selectedInputDevice(in: devices))
+    }
+
+    func testLegacyDeviceIDIsUsedWithoutUID() {
+        var config = Config.defaultConfig
+        config.audioInputDeviceID = 20
+        XCTAssertEqual(config.selectedInputDevice(in: devices)?.name, "USB")
+        XCTAssertNil(Config.defaultConfig.selectedInputDevice(in: devices))
     }
 
     // MARK: - Multiple hotkeys
@@ -374,5 +439,5 @@ final class ConfigTests: XCTestCase {
 }
 
 private struct FlexBoolWrapper: Codable {
-    let spokenPunctuation: FlexBool
+    let flag: FlexBool
 }

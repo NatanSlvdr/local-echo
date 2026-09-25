@@ -36,12 +36,12 @@ public class RecordingStore {
 
     static let filePrefix = "recording-"
     static let fileExtension = "wav"
-    private static var dateFormatter: DateFormatter {
+    private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd-HHmmss"
         f.locale = Locale(identifier: "en_US_POSIX")
         return f
-    }
+    }()
 
     public static func ensureDirectory() {
         do {

@@ -51,7 +51,6 @@ If you used the previous app name, Local-Echo copies your existing settings into
     "correctRecognitionErrors": true,
     "removeFillers": false
   },
-  "spokenPunctuation": false,
   "whisperPrompt": "Use punctuation and capitalization.",
   "maxRecordings": 0,
   "toggleMode": false,
@@ -82,7 +81,6 @@ Both `hotkey` (single) and `hotkeys` (array) are supported. If both are present,
 | **modelSize** | `"large-v3-turbo"` | `large-v3-turbo`, `qwen3-asr-1.7b-8bit`, `parakeet-tdt-v3-mixed`, or `qwen3-asr-1.7b-4bit` |
 | **cleanupModel** | `"qwen35-08b-qat-q4"` | This Qwen3.5 cleanup model, or `"off"` |
 | **cleanupOptions** | Light formatting and obvious-error correction on; filler removal off | `formattingLevel`: `none`, `light`, `polished` (paragraphs), or `structured` (paragraphs and lists when clearly dictated). Also choose obvious recognition corrections and filler/repetition removal. Missing fields use the defaults. Older `formatText` and `addParagraphs` settings are migrated. |
-| **spokenPunctuation** | `false` | Say "comma", "period", etc. to insert punctuation instead of auto-punctuation |
 | **whisperPrompt** | — | Optional prompt text passed to Whisper to guide style, vocabulary, or punctuation. Omit it or leave it blank to use Whisper's default behavior. |
 | **maxRecordings** | `0` | Optionally store past recordings locally as `.wav` files for re-transcribing from the tray menu. `0` = nothing stored (default). Set 1-100 to keep that many recent recordings. |
 | **toggleMode** | `false` | Press hotkey once to start recording, press again to stop. Default is hold-to-talk. |
@@ -109,7 +107,7 @@ Click the waveform icon to open a native macOS menu. The header shows the curren
 | Downloading model | Progress ring |
 | Waiting for permission | Lock |
 
-Choose **Réglages…** (⌘,) to open the settings window, laid out like System Settings. **Général** explains how to dictate in three steps, shows whether the Microphone and Accessibility permissions are granted (with a button to fix them), and summarizes the current choices with links to each page. **Transcription** lists the four models from lightest to heaviest with a one-line description each, flags models that still need downloading, and shows a spoken-punctuation example. **Nettoyage du texte** has an on/off switch, the four formatting levels with a "what you say / what you get" example for the selected one, and switches for obvious-error correction and filler removal. **Audio** picks the microphone, lowers other audio during dictation, and sets how many recordings to keep for re-transcription. **Raccourci** records a new shortcut, explains the Globe-key emoji setting when Fn is used, and chooses between holding and pressing. **Avancé** opens, reveals, or reloads the configuration file and can restore default settings after confirmation.
+Choose **Réglages…** (⌘,) to open the settings window, laid out like System Settings. **Général** explains how to dictate in three steps, shows whether the Microphone and Accessibility permissions are granted (with a button to fix them), and summarizes the current choices with links to each page. **Transcription** lists the four models from lightest to heaviest with a one-line description each, and flags models that still need downloading. **Nettoyage du texte** has an on/off switch, the four formatting levels with a "what you say / what you get" example for the selected one, and switches for obvious-error correction and filler removal. **Audio** picks the microphone, lowers other audio during dictation, and sets how many recordings to keep for re-transcription. **Raccourci** records a new shortcut, explains the Globe-key emoji setting when Fn is used, and chooses between holding and pressing. **Avancé** opens, reveals, or reloads the configuration file and can restore default settings after confirmation.
 
 ## Compare
 

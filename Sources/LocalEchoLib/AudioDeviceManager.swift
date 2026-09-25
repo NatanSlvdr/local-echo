@@ -86,7 +86,31 @@ class AudioDeviceManager {
     /// trusting the possibly-reassigned numeric ID.
     static func resolveConfiguredDeviceID(uid: String?, legacyID: AudioDeviceID?) -> AudioDeviceID? {
         guard let uid = uid else { return legacyID }
-        return listInputDevices().first(where: { $0.uid == uid })?.id
+        return inputDeviceID(forUID: uid)
+    }
+
+    /// Asks Core Audio for the device with this UID instead of listing and querying every device.
+    static func inputDeviceID(forUID uid: String) -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyTranslateUIDToDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var cfUID = uid as CFString
+        var deviceID = AudioDeviceID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = withUnsafePointer(to: &cfUID) { qualifier in
+            AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address,
+                UInt32(MemoryLayout<CFString>.size), qualifier,
+                &size,
+                &deviceID
+            )
+        }
+        guard status == noErr, deviceID != kAudioObjectUnknown,
+              hasInputStreams(deviceID: deviceID), !isVirtualDevice(deviceID: deviceID) else { return nil }
+        return deviceID
     }
 
     static func getDeviceUID(deviceID: AudioDeviceID) -> String? {

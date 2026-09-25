@@ -13,6 +13,8 @@ esac
 mkdir -p "$REPO_DIR/.build/$MODE"
 BUILD_DIR="$(mktemp -d "$REPO_DIR/.build/swift-build.XXXXXX")"
 trap 'rm -rf "$BUILD_DIR"' EXIT
+LIB_SOURCES=()
+while IFS= read -r source; do LIB_SOURCES+=("$source"); done < <(find "$REPO_DIR/Sources/LocalEchoLib" -name '*.swift' | sort)
 
 (
     cd "$BUILD_DIR"
@@ -20,7 +22,7 @@ trap 'rm -rf "$BUILD_DIR"' EXIT
         -emit-module -emit-object -parse-as-library \
         -module-name LocalEchoLib \
         -emit-module-path "$BUILD_DIR/LocalEchoLib.swiftmodule" \
-        "$REPO_DIR"/Sources/LocalEchoLib/*.swift \
+        "${LIB_SOURCES[@]}" \
         -framework AppKit -framework SwiftUI -framework AVFoundation -framework CoreAudio
 )
 

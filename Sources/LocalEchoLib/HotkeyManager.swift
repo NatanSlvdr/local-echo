@@ -84,29 +84,24 @@ class HotkeyManager {
 
     private func handleEvent(_ event: NSEvent) {
         guard !ShortcutCaptureGate.shared.isActive else { return }
-        if isModifierOnlyKey(keyCode) {
+        if HotkeyConfig.modifierFlag(forKeyCode: keyCode) != nil {
             guard event.type == .flagsChanged else { return }
             guard event.keyCode == keyCode else { return }
 
-            if modifierPressed {
-                modifierPressed = false
-                onKeyUp?()
-            } else {
-                if requiredModifiers != 0 {
-                    let currentMods = UInt64(event.modifierFlags.rawValue) & 0x00FF0000
-                    guard currentMods & requiredModifiers == requiredModifiers else { return }
-                }
+            // Reads the key's state from the event instead of toggling, so a missed event cannot invert press and release.
+            let pressed = Self.isModifierKeyDown(keyCode, in: event.modifierFlags)
+            if pressed, !modifierPressed {
+                guard hasRequiredModifiers(event) else { return }
                 modifierPressed = true
                 onKeyDown?()
+            } else if !pressed, modifierPressed {
+                modifierPressed = false
+                onKeyUp?()
             }
         } else {
             guard event.keyCode == keyCode else { return }
             if event.type == .keyDown {
-                guard !keyPressed else { return }
-                if requiredModifiers != 0 {
-                    let currentMods = UInt64(event.modifierFlags.rawValue) & 0x00FF0000
-                    guard currentMods & requiredModifiers == requiredModifiers else { return }
-                }
+                guard !keyPressed, hasRequiredModifiers(event) else { return }
                 keyPressed = true
                 onKeyDown?()
             } else if event.type == .keyUp, keyPressed {
@@ -116,7 +111,24 @@ class HotkeyManager {
         }
     }
 
-    private func isModifierOnlyKey(_ code: UInt16) -> Bool {
-        return [54, 55, 56, 58, 59, 60, 61, 62, 63].contains(code)
+    /// Device-dependent bits (NX_DEVICE*KEYMASK) that tell the left and right modifier keys apart.
+    private static let sideMasks: [UInt16: UInt] = [
+        54: 0x10, 55: 0x08,     // right, left Command
+        56: 0x02, 60: 0x04,     // left, right Shift
+        58: 0x20, 61: 0x40,     // left, right Option
+        59: 0x01, 62: 0x2000,   // left, right Control
+    ]
+    private static let allSideBits: UInt = sideMasks.values.reduce(0, |)
+
+    static func isModifierKeyDown(_ keyCode: UInt16, in flags: NSEvent.ModifierFlags) -> Bool {
+        guard let modifier = HotkeyConfig.modifierFlag(forKeyCode: keyCode) else { return false }
+        guard flags.contains(modifier) else { return false }
+        guard let side = sideMasks[keyCode], flags.rawValue & allSideBits != 0 else { return true }
+        return flags.rawValue & side != 0
+    }
+
+    // Extra held modifiers are allowed, so Ctrl+Space still fires while Shift is down.
+    private func hasRequiredModifiers(_ event: NSEvent) -> Bool {
+        UInt64(event.modifierFlags.rawValue) & requiredModifiers == requiredModifiers
     }
 }

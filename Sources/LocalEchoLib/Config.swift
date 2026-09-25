@@ -1,13 +1,12 @@
+import AppKit
 import Foundation
 
 public struct Config: Codable, Sendable {
     public var hotkeys: [HotkeyConfig]
-    public var modelPath: String?
     public var modelSize: String
     public var cleanupModel: String?
     public var cleanupOptions: CleanupOptions
     public var whisperPrompt: String?
-    public var spokenPunctuation: FlexBool?
     public var maxRecordings: Int?
     public var toggleMode: FlexBool?
     // The former duckOtherAudio key is ignored so affected installs restart with ducking off.
@@ -15,7 +14,15 @@ public struct Config: Codable, Sendable {
     public var audioInputDeviceID: UInt32?
     public var audioInputDeviceUID: String?
 
-    public var duckOtherAudioEnabled: Bool { duckOtherAudioDuringRecording?.value ?? false }
+    public var usesToggleMode: Bool {
+        get { toggleMode?.value ?? false }
+        set { toggleMode = FlexBool(newValue) }
+    }
+
+    public var duckOtherAudioEnabled: Bool {
+        get { duckOtherAudioDuringRecording?.value ?? false }
+        set { duckOtherAudioDuringRecording = FlexBool(newValue) }
+    }
 
     public var hotkey: HotkeyConfig {
         get { hotkeys[0] }
@@ -34,6 +41,28 @@ public struct Config: Codable, Sendable {
             .joined(separator: " · ")
     }
 
+    /// The shortcut and how it is used, as shown in the menu and Settings.
+    var shortcutSummary: String {
+        "\(hotkeyDisplaySummary()) · \(usesToggleMode ? "Appuyer" : "Maintenir")"
+    }
+
+    /// Whether cleanup runs and how much it formats, as shown in the menu and Settings.
+    var cleanupSummary: String {
+        cleanupModel == nil ? "Désactivé" : "Mise en forme \(cleanupOptions.formattingLevel.title.lowercased())"
+    }
+
+    /// The configured microphone among connected devices, or nil for the system default.
+    /// A stored UID wins over the numeric ID, which can change after a reboot.
+    func selectedInputDevice(in devices: [AudioInputDevice]) -> AudioInputDevice? {
+        if let uid = audioInputDeviceUID {
+            return devices.first { $0.uid == uid }
+        }
+        if let id = audioInputDeviceID {
+            return devices.first { $0.id == id }
+        }
+        return nil
+    }
+
     private static func deduplicateHotkeys(_ list: [HotkeyConfig]) -> [HotkeyConfig] {
         var out: [HotkeyConfig] = []
         for h in list where !out.contains(h) {
@@ -45,18 +74,19 @@ public struct Config: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case hotkey
         case hotkeys
-        case modelPath
         case modelSize
         case cleanupModel
         case cleanupOptions
         case whisperPrompt
-        case spokenPunctuation
         case maxRecordings
         case toggleMode
         case duckOtherAudioDuringRecording
         case audioInputDeviceID
         case audioInputDeviceUID
     }
+
+    /// Keys written by older versions. A file containing one is saved again without it.
+    static let removedKeys = ["language", "spokenPunctuation", "modelPath"]
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -69,14 +99,12 @@ public struct Config: Codable, Sendable {
         } else {
             self.hotkeys = [HotkeyConfig(keyCode: 63, modifiers: [])]
         }
-        self.modelPath = try c.decodeIfPresent(String.self, forKey: .modelPath)
         self.modelSize = try c.decode(String.self, forKey: .modelSize)
         self.cleanupModel = try c.decodeIfPresent(String.self, forKey: .cleanupModel) ?? ModelCatalog.cleanup.id
         if cleanupModel == "off" { cleanupModel = nil }
         if cleanupModel != nil && cleanupModel != ModelCatalog.cleanup.id { cleanupModel = ModelCatalog.cleanup.id }
         self.cleanupOptions = try c.decodeIfPresent(CleanupOptions.self, forKey: .cleanupOptions) ?? .defaults
         self.whisperPrompt = try c.decodeIfPresent(String.self, forKey: .whisperPrompt)
-        self.spokenPunctuation = try c.decodeIfPresent(FlexBool.self, forKey: .spokenPunctuation)
         self.maxRecordings = try c.decodeIfPresent(Int.self, forKey: .maxRecordings)
         self.toggleMode = try c.decodeIfPresent(FlexBool.self, forKey: .toggleMode)
         self.duckOtherAudioDuringRecording = try c.decodeIfPresent(FlexBool.self, forKey: .duckOtherAudioDuringRecording)
@@ -88,12 +116,10 @@ public struct Config: Codable, Sendable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(hotkeys, forKey: .hotkeys)
         try c.encode(hotkeys[0], forKey: .hotkey)
-        try c.encodeIfPresent(modelPath, forKey: .modelPath)
         try c.encode(modelSize, forKey: .modelSize)
         try c.encode(cleanupModel ?? "off", forKey: .cleanupModel)
         try c.encode(cleanupOptions, forKey: .cleanupOptions)
         try c.encodeIfPresent(whisperPrompt, forKey: .whisperPrompt)
-        try c.encodeIfPresent(spokenPunctuation, forKey: .spokenPunctuation)
         try c.encodeIfPresent(maxRecordings, forKey: .maxRecordings)
         try c.encodeIfPresent(toggleMode, forKey: .toggleMode)
         try c.encodeIfPresent(duckOtherAudioDuringRecording, forKey: .duckOtherAudioDuringRecording)
@@ -103,12 +129,10 @@ public struct Config: Codable, Sendable {
 
     public init(
         hotkeys: [HotkeyConfig],
-        modelPath: String?,
         modelSize: String,
         cleanupModel: String? = ModelCatalog.cleanup.id,
         cleanupOptions: CleanupOptions = .defaults,
         whisperPrompt: String? = nil,
-        spokenPunctuation: FlexBool?,
         maxRecordings: Int?,
         toggleMode: FlexBool?,
         duckOtherAudioDuringRecording: FlexBool? = nil,
@@ -118,12 +142,10 @@ public struct Config: Codable, Sendable {
         self.hotkeys = hotkeys.isEmpty
             ? [HotkeyConfig(keyCode: 63, modifiers: [])]
             : Config.deduplicateHotkeys(hotkeys)
-        self.modelPath = modelPath
         self.modelSize = modelSize
         self.cleanupModel = cleanupModel
         self.cleanupOptions = cleanupOptions
         self.whisperPrompt = whisperPrompt
-        self.spokenPunctuation = spokenPunctuation
         self.maxRecordings = maxRecordings
         self.toggleMode = toggleMode
         self.duckOtherAudioDuringRecording = duckOtherAudioDuringRecording
@@ -148,10 +170,8 @@ public struct Config: Codable, Sendable {
 
     public static let defaultConfig = Config(
         hotkeys: [HotkeyConfig(keyCode: 63, modifiers: [])],
-        modelPath: nil,
         modelSize: "large-v3-turbo",
         whisperPrompt: nil,
-        spokenPunctuation: FlexBool(false),
         maxRecordings: nil,
         toggleMode: FlexBool(false),
         duckOtherAudioDuringRecording: FlexBool(false)
@@ -184,8 +204,9 @@ public struct Config: Codable, Sendable {
         do {
             var config = try JSONDecoder().decode(Config.self, from: data)
             let resolved = Config.supportedModel(config.modelSize)
-            let hasLegacyLanguage = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["language"] != nil
-            if resolved != config.modelSize || source != configFile || hasLegacyLanguage {
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let hasRemovedKeys = removedKeys.contains { object?[$0] != nil }
+            if resolved != config.modelSize || source != configFile || hasRemovedKeys {
                 config.modelSize = resolved
                 try? config.save()
             }
@@ -245,17 +266,39 @@ public struct HotkeyConfig: Codable, Equatable, Sendable {
     }
 
     public var modifierFlags: UInt64 {
-        var flags: UInt64 = 0
-        for mod in modifiers {
-            switch mod.lowercased() {
-            case "cmd", "command": flags |= UInt64(1 << 20)
-            case "shift": flags |= UInt64(1 << 17)
-            case "ctrl", "control": flags |= UInt64(1 << 18)
-            case "opt", "option", "alt": flags |= UInt64(1 << 19)
-            case "fn", "globe": flags |= UInt64(1 << 23)
-            default: break
-            }
+        let flags = modifiers.compactMap(Self.flag(forModifier:))
+        return UInt64(NSEvent.ModifierFlags(flags).rawValue)
+    }
+
+    /// The flag for a modifier name stored in the configuration, including accepted aliases.
+    static func flag(forModifier name: String) -> NSEvent.ModifierFlags? {
+        switch name.lowercased() {
+        case "cmd", "command": .command
+        case "shift": .shift
+        case "ctrl", "control": .control
+        case "opt", "option", "alt": .option
+        case "fn", "globe": .function
+        default: nil
         }
-        return flags
+    }
+
+    /// The configuration names of the held modifiers, in the order the settings window records them.
+    static func modifierNames(in flags: NSEvent.ModifierFlags) -> [String] {
+        let names: [(String, NSEvent.ModifierFlags)] = [
+            ("cmd", .command), ("shift", .shift), ("opt", .option), ("ctrl", .control), ("fn", .function),
+        ]
+        return names.filter { flags.contains($0.1) }.map(\.0)
+    }
+
+    /// The flag a modifier key sets by itself, or nil when the key is not a modifier.
+    static func modifierFlag(forKeyCode keyCode: UInt16) -> NSEvent.ModifierFlags? {
+        switch keyCode {
+        case 54, 55: .command
+        case 56, 60: .shift
+        case 58, 61: .option
+        case 59, 62: .control
+        case 63: .function
+        default: nil
+        }
     }
 }

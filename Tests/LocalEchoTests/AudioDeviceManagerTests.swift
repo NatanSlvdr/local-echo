@@ -90,4 +90,11 @@ final class AudioDeviceManagerTests: XCTestCase {
             )
         )
     }
+
+    func testUIDLookupMatchesListedInputDevices() {
+        for device in AudioDeviceManager.listInputDevices() {
+            guard let uid = device.uid else { continue }
+            XCTAssertEqual(AudioDeviceManager.inputDeviceID(forUID: uid), device.id)
+        }
+    }
 }
