@@ -157,7 +157,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(makeMicrophoneItem(config: config))
         menu.addItem(makeCleanupItem(config: config))
         menu.addItem(makeShortcutItem(config: config))
-        menu.addItem(makeDuckingItem(config: config))
 
         menu.addItem(.separator())
         let settingsItem = actionItem("Réglages…", symbol: "gearshape", key: ",") { [weak self] in
@@ -288,7 +287,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         let systemDefault = devices.first(where: \.isDefault)
         let selected = Self.selectedDevice(in: devices, config: config)
 
-        let item = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: "Audio", action: nil, keyEquivalent: "")
         setMenuIcon("mic", on: item)
         setSubtitle(selected?.name ?? systemDefault?.name ?? "Par défaut du système", on: item)
 
@@ -318,6 +317,10 @@ class StatusBarController: NSObject, NSMenuDelegate {
             deviceItem.isEnabled = canChange
             submenu.addItem(deviceItem)
         }
+
+        // A toggle here keeps the top-level menu free of a checkmark column.
+        submenu.addItem(sectionHeader("Pendant la dictée"))
+        submenu.addItem(makeDuckingItem(config: config))
 
         item.submenu = submenu
         return item
@@ -399,7 +402,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func makeDuckingItem(config: Config) -> NSMenuItem {
-        let item = actionItem("Baisser le son pendant la dictée", symbol: "speaker.wave.2") { [weak self] in
+        let item = actionItem("Baisser le son des autres apps") { [weak self] in
             self?.changeConfig {
                 $0.duckOtherAudioDuringRecording = FlexBool(!$0.duckOtherAudioEnabled)
             }

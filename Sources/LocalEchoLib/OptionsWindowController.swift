@@ -48,6 +48,10 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    func windowDidBecomeKey(_ notification: Notification) {
+        settings.refreshPermissions()
+    }
+
     func windowDidResignKey(_ notification: Notification) {
         settings.cancelShortcutCapture()
     }
@@ -72,6 +76,8 @@ private final class SettingsStore: ObservableObject {
     @Published var selection: SettingsPage? = .general
     @Published var searchText = ""
     @Published private(set) var isCapturingShortcut = false
+    @Published private(set) var hasMicrophoneAccess = Permissions.hasMicrophoneAccess
+    @Published private(set) var hasAccessibilityAccess = AXIsProcessTrusted()
     var presentError: ((Error) -> Void)?
     var confirmReset: (@escaping () -> Void) -> Void = { $0() }
     private let onConfigChange: (Config) -> Void
@@ -86,6 +92,12 @@ private final class SettingsStore: ObservableObject {
         self.config = config
         self.isRecording = isRecording
         inputDevices = AudioDeviceManager.listInputDevices()
+        refreshPermissions()
+    }
+
+    func refreshPermissions() {
+        hasMicrophoneAccess = Permissions.hasMicrophoneAccess
+        hasAccessibilityAccess = AXIsProcessTrusted()
     }
 
     func change(_ edit: (inout Config) -> Void) {
@@ -113,6 +125,16 @@ private final class SettingsStore: ObservableObject {
         return "default"
     }
 
+    var systemDefaultDeviceName: String? {
+        inputDevices.first(where: \.isDefault)?.name
+    }
+
+    var selectedDeviceName: String {
+        inputDevices.first { String($0.id) == selectedDevice }?.name
+            ?? systemDefaultDeviceName
+            ?? "Par défaut du système"
+    }
+
     func selectDevice(_ value: String) {
         let device = inputDevices.first { String($0.id) == value }
         change {
@@ -137,6 +159,17 @@ private final class SettingsStore: ObservableObject {
             catch { presentError?(error); return }
         }
         NSWorkspace.shared.activateFileViewerSelecting([file])
+    }
+
+    func revealRecordings() {
+        RecordingStore.ensureDirectory()
+        NSWorkspace.shared.open(RecordingStore.recordingsDir)
+    }
+
+    func openKeyboardSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func reloadConfiguration() {
@@ -243,7 +276,7 @@ enum SettingsPage: String, Hashable, CaseIterable {
         case .transcription: "Transcription"
         case .cleanup: "Nettoyage du texte"
         case .audio: "Audio"
-        case .controls: "Contrôles"
+        case .controls: "Raccourci"
         case .advanced: "Avancé"
         case .about: "À propos"
         }
@@ -275,18 +308,18 @@ enum SettingsPage: String, Hashable, CaseIterable {
 
     var searchTerms: String {
         switch self {
-        case .general: "vue d'ensemble astuces conseils démarrage"
-        case .transcription: "modèle reconnaissance vocale ponctuation taille téléchargement"
-        case .cleanup: "nettoyage correction texte modèle"
-        case .audio: "microphone entrée son volume"
-        case .controls: "enregistrement raccourci clavier touches combinaison maintien démarrer arrêter"
+        case .general: "vue d'ensemble dicter comment autorisations accessibilité microphone permission"
+        case .transcription: "modèle reconnaissance vocale ponctuation taille téléchargement langue"
+        case .cleanup: "nettoyage correction texte modèle mise en forme paragraphes liste hésitations"
+        case .audio: "microphone entrée son volume baisser enregistrements conserver"
+        case .controls: "enregistrement raccourci clavier touches combinaison maintenir appuyer fn globe"
         case .advanced: "configuration fichier ouvrir recharger réinitialiser défaut"
-        case .about: "version licence compatibilité code source"
+        case .about: "version licence compatibilité code source confidentialité"
         }
     }
 }
 
-// Uses native lists, symbols, forms, pickers, and switches so the window follows macOS appearance.
+// Mirrors System Settings: grouped forms, labeled groups, and short explanations only where they help.
 private struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
 
@@ -296,7 +329,7 @@ private struct SettingsView: View {
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
-                    TextField("Rechercher un réglage", text: Binding(
+                    TextField("Rechercher", text: Binding(
                         get: { settings.searchText },
                         set: { settings.searchText = $0 }
                     ))
@@ -326,40 +359,24 @@ private struct SettingsView: View {
                         settings.selection = page
                     }
                 )) {
-                    if [.general, .transcription, .cleanup].contains(where: matches) {
-                        Section("ESSENTIELS") {
-                            if matches(.general) { sidebarItem(.general) }
-                            if matches(.transcription) { sidebarItem(.transcription) }
-                            if matches(.cleanup) { sidebarItem(.cleanup) }
-                        }
-                    }
-                    if [.audio, .controls].contains(where: matches) {
-                        Section("PÉRIPHÉRIQUES ET SAISIE") {
-                            if matches(.audio) { sidebarItem(.audio) }
-                            if matches(.controls) { sidebarItem(.controls) }
-                        }
-                    }
-                    if [.advanced, .about].contains(where: matches) {
-                        Section("APPLICATION") {
-                            if matches(.advanced) { sidebarItem(.advanced) }
-                            if matches(.about) { sidebarItem(.about) }
-                        }
-                    }
+                    sidebarSection([.general, .transcription, .cleanup])
+                    sidebarSection([.audio, .controls])
+                    sidebarSection([.advanced, .about])
                     if !SettingsPage.allCases.contains(where: matches) {
-                        Text("Aucun réglage trouvé")
+                        Text("Aucun résultat")
                             .foregroundStyle(.secondary)
                     }
                 }
                 .listStyle(.sidebar)
             }
             .tint(.blue)
-            .frame(width: 235)
+            .frame(width: 220)
 
             Divider()
 
             VStack(spacing: 0) {
                 HStack {
-                    Text((settings.selection ?? .general).title)
+                    Text(page.title)
                         .font(.system(size: 17, weight: .semibold))
                     Spacer()
                 }
@@ -368,7 +385,7 @@ private struct SettingsView: View {
                 Divider()
 
                 Group {
-                    switch settings.selection ?? .general {
+                    switch page {
                     case .general: generalPage
                     case .transcription: transcriptionPage
                     case .cleanup: cleanupPage
@@ -383,17 +400,26 @@ private struct SettingsView: View {
         }
     }
 
+    private var page: SettingsPage { settings.selection ?? .general }
+
+    // MARK: - Sidebar
+
+    @ViewBuilder
+    private func sidebarSection(_ pages: [SettingsPage]) -> some View {
+        let visible = pages.filter(matches)
+        if !visible.isEmpty {
+            Section {
+                ForEach(visible, id: \.self) { sidebarItem($0) }
+            }
+        }
+    }
+
     private func sidebarItem(_ page: SettingsPage) -> some View {
         HStack(spacing: 9) {
-            Image(systemName: page.symbol)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 23, height: 23)
-                .background(page.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            IconBadge(symbol: page.symbol, color: page.color, size: 22)
             Text(page.title)
-                .font(.system(size: 13, weight: .medium))
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 1)
         .tag(page)
     }
 
@@ -403,97 +429,101 @@ private struct SettingsView: View {
             || page.searchTerms.localizedStandardContains(query)
     }
 
-    private func sectionHeading(_ title: String, symbol: String) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: symbol).foregroundStyle(.primary)
-            Text(title)
-        }
-    }
+    // MARK: - Général
 
-    private func settingLabel(_ title: String, symbol: String) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: symbol)
-                .foregroundStyle(.primary)
-                .frame(width: 18)
-            Text(title)
-        }
-    }
-
-    private func infoRow(_ title: String, value: String, symbol: String) -> some View {
-        LabeledContent {
-            Text(value)
-        } label: {
-            settingLabel(title, symbol: symbol)
-        }
-    }
-
-    private func cleanupSetting(_ title: String, symbol: String, detail: String,
-                                keyPath: WritableKeyPath<CleanupOptions, Bool>) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Toggle(isOn: Binding(
-                get: { settings.config.cleanupOptions[keyPath: keyPath] },
-                set: { enabled in settings.change { $0.cleanupOptions[keyPath: keyPath] = enabled } }
-            )) {
-                settingLabel(title, symbol: symbol)
-            }
-            .toggleStyle(.switch)
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
+    private var hotkey: String { settings.config.hotkeyDisplaySummary() }
+    private var toggleMode: Bool { settings.config.toggleMode?.value ?? false }
 
     private var generalPage: some View {
         Form {
             Section {
-                infoRow("Raccourci clavier", value: settings.config.hotkeyDisplaySummary(), symbol: "keyboard")
-                infoRow("Modèle de transcription", value: selectedSpeechModel?.name ?? settings.config.modelSize,
-                        symbol: "waveform")
-                infoRow("Nettoyage du texte", value: settings.config.cleanupModel == nil ? "Désactivé" : "Activé",
-                        symbol: "wand.and.stars")
-            } header: {
-                sectionHeading("Vue d'ensemble", symbol: "square.grid.2x2")
-            } footer: {
-                Text("La transcription et le nettoyage s'exécutent sur ce Mac.")
+                HStack(spacing: 14) {
+                    Image(nsImage: NSApplication.shared.applicationIconImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 56, height: 56)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Local-Echo").font(.title3.weight(.semibold))
+                        HStack(spacing: 5) {
+                            Text(toggleMode ? "Appuyez sur" : "Maintenez")
+                            KeyCap(hotkey)
+                            Text(toggleMode ? "pour dicter, puis appuyez de nouveau." : "et parlez, puis relâchez.")
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+
+            Section("Comment dicter") {
+                StepRow(number: 1, title: "Cliquez dans un champ de texte",
+                        detail: "Dans n'importe quelle app : Mail, Notes, Messages, un navigateur…")
+                StepRow(number: 2, title: toggleMode ? "Appuyez sur \(hotkey) et parlez" : "Maintenez \(hotkey) et parlez",
+                        detail: "L'icône de Local-Echo s'anime dans la barre des menus pendant l'écoute.")
+                StepRow(number: 3, title: toggleMode ? "Appuyez de nouveau sur \(hotkey)" : "Relâchez \(hotkey)",
+                        detail: "Le texte apparaît à l'emplacement du curseur quelques instants plus tard.")
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    settingLabel("Dicter rapidement", symbol: "waveform")
-                    Text(settings.config.toggleMode?.value == true
-                         ? "Appuyez sur le raccourci pour commencer, puis appuyez de nouveau pour terminer."
-                         : "Maintenez le raccourci pendant que vous parlez, puis relâchez-le.")
-                        .foregroundStyle(.secondary)
+                PermissionRow(title: "Microphone", detail: "Pour entendre votre voix pendant la dictée.",
+                              granted: settings.hasMicrophoneAccess, open: Permissions.openMicrophoneSettings)
+                PermissionRow(title: "Accessibilité", detail: "Pour écrire le texte dicté dans l'app active.",
+                              granted: settings.hasAccessibilityAccess, open: Permissions.openAccessibilitySettings)
+            } header: {
+                Text("Autorisations")
+            } footer: {
+                if !(settings.hasMicrophoneAccess && settings.hasAccessibilityAccess) {
+                    Text("Activez Local-Echo dans la liste qui s'ouvre, puis revenez ici.")
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    settingLabel("Retrouver la dernière dictée", symbol: "doc.on.clipboard")
-                    Text("Choisissez « Copier la dernière dictée » dans le menu de Local-Echo pour récupérer le dernier texte.")
-                        .foregroundStyle(.secondary)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    settingLabel("Changer de modèle", symbol: "cpu")
-                    Text("Choisissez un modèle dans Transcription. Son téléchargement démarre si nécessaire.")
-                        .foregroundStyle(.secondary)
+            }
+
+            Section {
+                NavigationRow(title: "Modèle de transcription", value: speechModelName) { go(.transcription) }
+                NavigationRow(title: "Nettoyage du texte", value: cleanupSummary) { go(.cleanup) }
+                NavigationRow(title: "Microphone", value: settings.selectedDeviceName) { go(.audio) }
+                NavigationRow(title: "Raccourci", value: "\(hotkey) · \(toggleMode ? "Appuyer" : "Maintenir")") {
+                    go(.controls)
                 }
             } header: {
-                sectionHeading("Conseils utiles", symbol: "lightbulb")
+                Text("Réglages actuels")
+            } footer: {
+                Text("Astuce : si vous avez dicté sans champ de texte actif, choisissez « Copier la dernière dictée » dans le menu de Local-Echo.")
             }
         }
         .formStyle(.grouped)
     }
 
+    private func go(_ page: SettingsPage) {
+        settings.cancelShortcutCapture()
+        settings.selection = page
+    }
+
+    private var speechModelName: String {
+        ModelCatalog.speechModel(settings.config.modelSize)?.name ?? settings.config.modelSize
+    }
+
+    private var cleanupSummary: String {
+        settings.config.cleanupModel == nil
+            ? "Désactivé"
+            : "Mise en forme \(settings.config.cleanupOptions.formattingLevel.title.lowercased())"
+    }
+
+    // MARK: - Transcription
+
     private var transcriptionPage: some View {
         Form {
-            ForEach(ModelCatalog.SizeCategory.allCases, id: \.self) { category in
-                Section {
-                    ForEach(ModelCatalog.speech.filter { $0.sizeCategory == category }, id: \.id) { model in
-                        modelRow(model, selected: settings.config.modelSize == model.id) {
-                            settings.change { $0.modelSize = model.id }
-                        }
+            Section {
+                ForEach(orderedSpeechModels, id: \.id) { model in
+                    ChoiceRow(title: model.name, detail: Self.modelSummary(model.id),
+                              trailing: downloadNote(model),
+                              selected: settings.config.modelSize == model.id) {
+                        settings.change { $0.modelSize = model.id }
                     }
-                } header: {
-                    sectionHeading(categoryTitle(category), symbol: "waveform")
                 }
+            } header: {
+                Text("Modèle de transcription")
+            } footer: {
+                Text("Du plus léger au plus lourd. Un modèle non téléchargé se télécharge dès que vous le choisissez ; tout fonctionne ensuite hors ligne.")
             }
 
             Section {
@@ -501,150 +531,155 @@ private struct SettingsView: View {
                     get: { settings.config.spokenPunctuation?.value ?? false },
                     set: { enabled in settings.change { $0.spokenPunctuation = FlexBool(enabled) } }
                 )) {
-                    settingLabel("Interpréter la ponctuation prononcée", symbol: "text.quote")
+                    Text("Interpréter la ponctuation dictée")
+                    Text("Retire la ponctuation automatique et n'ajoute que celle que vous prononcez, en anglais.")
                 }
                 .toggleStyle(.switch)
+                ExampleView(said: "hello comma how are you question mark", result: "hello, how are you?")
             } header: {
-                sectionHeading("Ponctuation", symbol: "text.quote")
+                Text("Ponctuation")
             } footer: {
-                Text("Transforme les mots comme « virgule » et « point » en signes de ponctuation.")
+                Text("Mots reconnus : comma, period, question mark, exclamation mark, colon, semicolon, new line, new paragraph, open quote, close quote.")
             }
-
         }
         .formStyle(.grouped)
     }
 
-    private func categoryTitle(_ category: ModelCatalog.SizeCategory) -> String {
-        switch category {
-        case .lightweight: "Modèles légers · moins de 1 Go"
-        case .medium: "Modèles intermédiaires · 1 à 1,5 Go"
-        case .heavy: "Modèles lourds · plus de 1,5 Go"
+    private var orderedSpeechModels: [ModelCatalog.Model] {
+        ModelCatalog.SizeCategory.allCases.flatMap { category in
+            ModelCatalog.speech.filter { $0.sizeCategory == category }
         }
     }
 
-    private func modelRow(_ model: ModelCatalog.Model, selected: Bool,
-                          onSelect: @escaping () -> Void) -> some View {
-        let downloaded = ModelDownloader.modelExists(model.id)
-        return Button(action: onSelect) {
-            HStack(spacing: 12) {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 21))
-                    .foregroundStyle(.primary)
-                    .frame(width: 23)
-                Text(model.name)
-                    .fontWeight(selected ? .semibold : .regular)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(model.approximateDownload)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Text("Téléchargé : \(downloaded ? "oui" : "non")")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .font(.subheadline)
-            .contentShape(Rectangle())
-            .padding(.vertical, 4)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(model.name), \(model.approximateDownload), téléchargé : \(downloaded ? "oui" : "non")")
+    private func downloadNote(_ model: ModelCatalog.Model) -> String? {
+        ModelDownloader.modelExists(model.id) ? nil : "À télécharger · \(model.approximateDownload)"
     }
+
+    private static func modelSummary(_ id: String) -> String? {
+        switch id {
+        case "parakeet-tdt-v3-mixed": "Le plus rapide et le plus léger. 25 langues européennes, dont le français."
+        case "qwen3-asr-1.7b-4bit": "Bon équilibre entre précision, vitesse et taille."
+        case "qwen3-asr-1.7b-8bit": "La meilleure précision de Qwen3, au prix d'un modèle plus lourd."
+        case "large-v3-turbo": "Polyvalent et éprouvé, reconnaît un très grand nombre de langues."
+        default: nil
+        }
+    }
+
+    // MARK: - Nettoyage
+
+    private var cleanupEnabled: Bool { settings.config.cleanupModel != nil }
 
     private var cleanupPage: some View {
         Form {
             Section {
                 Toggle(isOn: Binding(
-                    get: { settings.config.cleanupModel != nil },
+                    get: { cleanupEnabled },
                     set: { enabled in
                         settings.change { $0.cleanupModel = enabled ? ModelCatalog.cleanup.id : nil }
                     }
                 )) {
-                    settingLabel("Activer le nettoyage du texte", symbol: "sparkles")
+                    Text("Activer le nettoyage")
+                    Text("Un petit modèle local relit chaque transcription pour en corriger la forme.")
                 }
                 .toggleStyle(.switch)
-            } header: {
-                sectionHeading("Après la transcription", symbol: "wand.and.stars")
-            } footer: {
-                Text("Le nettoyage s'applique après la reconnaissance vocale. Relisez les textes importants : une correction peut être erronée.")
-            }
-
-            Section {
-                modelRow(ModelCatalog.cleanup, selected: settings.config.cleanupModel != nil) {
-                    settings.change { $0.cleanupModel = ModelCatalog.cleanup.id }
+                LabeledContent("Modèle") {
+                    Text(downloadNote(ModelCatalog.cleanup).map { "\(ModelCatalog.cleanup.name) · \($0)" }
+                         ?? ModelCatalog.cleanup.name)
                 }
             } header: {
-                sectionHeading("Modèle de nettoyage", symbol: "cpu")
+                Text("Nettoyage après transcription")
             } footer: {
-                Text("Un seul modèle de nettoyage est disponible actuellement. Utilisez l'interrupteur ci-dessus pour le désactiver.")
+                Text("Relisez les textes importants : une correction automatique peut se tromper.")
             }
 
             Section {
-                Picker(selection: Binding(
-                    get: { settings.config.cleanupOptions.formattingLevel },
-                    set: { level in settings.change { $0.cleanupOptions.formattingLevel = level } }
-                )) {
-                    ForEach(CleanupFormattingLevel.allCases, id: \.self) { level in
-                        Text(level.title).tag(level)
+                ForEach(CleanupFormattingLevel.allCases, id: \.self) { level in
+                    ChoiceRow(title: level.title, detail: Self.levelSummary(level), trailing: nil,
+                              selected: settings.config.cleanupOptions.formattingLevel == level) {
+                        settings.change { $0.cleanupOptions.formattingLevel = level }
                     }
-                } label: {
-                    settingLabel("Niveau de mise en forme", symbol: "textformat")
                 }
-                .pickerStyle(.segmented)
-                Text(settings.config.cleanupOptions.formattingLevel.explanation)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                let example = Self.levelExample(settings.config.cleanupOptions.formattingLevel)
+                ExampleView(said: example.said, result: example.result)
             } header: {
-                sectionHeading("Mise en forme de la transcription", symbol: "text.alignleft")
+                Text("Niveau de mise en forme")
+            }
+            .disabled(!cleanupEnabled)
+
+            Section {
+                cleanupToggle("Corriger les erreurs évidentes",
+                              detail: "Remplace un mot manifestement mal reconnu, sans réécrire la phrase. Ex. « un vert d'eau » → « un verre d'eau ».",
+                              keyPath: \.correctRecognitionErrors)
+                cleanupToggle("Supprimer hésitations et répétitions",
+                              detail: "Ex. « Je, je voudrais euh partir » → « Je voudrais partir ».",
+                              keyPath: \.removeFillers)
+            } header: {
+                Text("Corrections")
             } footer: {
-                Text("La ponctuation prononcée se règle séparément dans Transcription et s'applique avant le nettoyage.")
+                if cleanupEnabled && !settings.config.cleanupOptions.hasEdits {
+                    Text("Aucune correction n'est activée : la transcription restera telle quelle.")
+                }
             }
-            .disabled(settings.config.cleanupModel == nil)
-
-            Section {
-                cleanupSetting("Corriger les erreurs de transcription évidentes", symbol: "checkmark.seal",
-                               detail: "Corrige un mot manifestement mal reconnu, sans réécrire la phrase.",
-                               keyPath: \.correctRecognitionErrors)
-            } header: {
-                sectionHeading("Correction des mots", symbol: "text.badge.checkmark")
-            }
-            .disabled(settings.config.cleanupModel == nil)
-
-            Section {
-                cleanupSetting("Supprimer hésitations et répétitions", symbol: "text.badge.minus",
-                               detail: "Ex. « Je, je voudrais euh partir » peut devenir « Je voudrais partir ».",
-                               keyPath: \.removeFillers)
-            } header: {
-                sectionHeading("Options avancées", symbol: "slider.horizontal.3")
-            }
-            .disabled(settings.config.cleanupModel == nil)
-
-            if settings.config.cleanupModel != nil && !settings.config.cleanupOptions.hasEdits {
-                Text("Aucune correction n'est activée : la transcription restera telle quelle.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            .disabled(!cleanupEnabled)
         }
         .formStyle(.grouped)
     }
 
+    private func cleanupToggle(_ title: String, detail: String,
+                               keyPath: WritableKeyPath<CleanupOptions, Bool>) -> some View {
+        Toggle(isOn: Binding(
+            get: { settings.config.cleanupOptions[keyPath: keyPath] },
+            set: { enabled in settings.change { $0.cleanupOptions[keyPath: keyPath] = enabled } }
+        )) {
+            Text(title)
+            Text(detail)
+        }
+        .toggleStyle(.switch)
+    }
+
+    private static func levelSummary(_ level: CleanupFormattingLevel) -> String {
+        switch level {
+        case .none: "Garde la présentation telle quelle."
+        case .light: "Ponctuation, majuscules et espaces."
+        case .polished: "Phrases plus lisibles et paragraphes, sans listes."
+        case .structured: "Paragraphes, et une liste quand vous énumérez des points."
+        }
+    }
+
+    private static func levelExample(_ level: CleanupFormattingLevel) -> (said: String, result: String) {
+        switch level {
+        case .none:
+            ("bonjour comment ça va", "bonjour comment ça va")
+        case .light:
+            ("bonjour comment ça va", "Bonjour, comment ça va ?")
+        case .polished:
+            ("merci pour la réunion d'hier sinon vendredi je serai en retard",
+             "Merci pour la réunion d'hier.\n\nSinon, vendredi, je serai en retard.")
+        case .structured:
+            ("pour ce soir il faut premièrement du pain deuxièmement du lait",
+             "Pour ce soir, il faut :\n- du pain ;\n- du lait.")
+        }
+    }
+
+    // MARK: - Audio
+
     private var audioPage: some View {
         Form {
             Section {
-                Picker(selection: Binding(
+                Picker("Microphone", selection: Binding(
                     get: { settings.selectedDevice },
                     set: { settings.selectDevice($0) }
                 )) {
-                    Text("Microphone par défaut du système").tag("default")
+                    Text(settings.systemDefaultDeviceName.map { "Par défaut du système (\($0))" } ?? "Par défaut du système")
+                        .tag("default")
                     ForEach(settings.inputDevices, id: \.id) { device in
                         Text(device.name).tag(String(device.id))
                     }
-                } label: {
-                    settingLabel("Microphone", symbol: "mic.fill")
                 }
             } header: {
-                sectionHeading("Entrée audio", symbol: "mic.fill")
+                Text("Entrée audio")
             } footer: {
-                Text("Le microphone par défaut suit les changements effectués dans Réglages Système.")
+                Text("« Par défaut du système » suit le micro choisi dans Réglages Système → Son, par exemple quand vous branchez des écouteurs.")
             }
 
             Section {
@@ -654,104 +689,162 @@ private struct SettingsView: View {
                         settings.change { $0.duckOtherAudioDuringRecording = FlexBool(enabled) }
                     }
                 )) {
-                    settingLabel("Réduire le son des autres applications", symbol: "speaker.wave.2.fill")
+                    Text("Baisser le son des autres apps")
+                    Text("Ex. votre musique baisse pendant que vous parlez, puis retrouve son volume.")
                 }
                 .toggleStyle(.switch)
-                .disabled(settings.isRecording || !ProcessInfo.processInfo.isOperatingSystemAtLeast(
-                    OperatingSystemVersion(majorVersion: 14, minorVersion: 0, patchVersion: 0)
-                ))
+                .disabled(settings.isRecording || !Self.supportsDucking)
             } header: {
-                sectionHeading("Pendant l'enregistrement", symbol: "speaker.wave.2.fill")
+                Text("Pendant la dictée")
             } footer: {
-                Text("Disponible sur macOS 14 ou version ultérieure. Le volume est rétabli après l'enregistrement.")
-            }
-        }
-        .formStyle(.grouped)
-    }
-
-    private var controlsPage: some View {
-        Form {
-            Section {
-                Button {
-                    settings.startShortcutCapture()
-                } label: {
-                    HStack {
-                        settingLabel("Raccourci de dictée", symbol: "keyboard")
-                        Spacer()
-                        Text(settings.isCapturingShortcut ? "Appuyez sur les touches…" : settings.config.hotkeyDisplaySummary())
-                            .foregroundStyle(settings.isCapturingShortcut ? .secondary : .primary)
-                    }
-                    .contentShape(Rectangle())
+                if !Self.supportsDucking {
+                    Text("Nécessite macOS 14 ou version ultérieure.")
                 }
-                .buttonStyle(.plain)
-            } header: {
-                sectionHeading("Raccourci clavier", symbol: "keyboard.fill")
-            } footer: {
-                Text("Cliquez sur le raccourci, puis appuyez sur une touche ou une combinaison (par exemple ⌘ + ⇧ + Espace). Échap annule la saisie.")
             }
 
             Section {
                 Picker(selection: Binding(
-                    get: { settings.config.toggleMode?.value ?? false },
-                    set: { enabled in settings.change { $0.toggleMode = FlexBool(enabled) } }
+                    get: { Config.effectiveMaxRecordings(settings.config.maxRecordings) },
+                    set: { count in settings.change { $0.maxRecordings = count } }
                 )) {
-                    Text("Maintenir pour dicter").tag(false)
-                    Text("Appuyer pour démarrer / arrêter").tag(true)
+                    ForEach(recordingChoices, id: \.self) { count in
+                        Text(count == 0 ? "Ne pas conserver" : "Les \(count) derniers").tag(count)
+                    }
                 } label: {
-                    settingLabel("Mode du raccourci", symbol: "hand.tap.fill")
+                    Text("Conserver les enregistrements")
+                    Text("Pour retranscrire une ancienne dictée depuis le menu, dans « Enregistrements récents ».")
+                }
+                if Config.effectiveMaxRecordings(settings.config.maxRecordings) > 0 {
+                    LabeledContent("Dossier") {
+                        Button("Afficher dans le Finder") { settings.revealRecordings() }
+                    }
                 }
             } header: {
-                sectionHeading("Déclenchement", symbol: "record.circle.fill")
+                Text("Enregistrements")
             } footer: {
-                Text("Avec « Maintenir », relâchez les touches pour terminer. Avec « Appuyer », un second appui arrête l'enregistrement.")
+                Text(Config.effectiveMaxRecordings(settings.config.maxRecordings) > 0
+                     ? "Les fichiers audio restent sur ce Mac ; les plus anciens sont supprimés automatiquement."
+                     : "L'audio de chaque dictée est supprimé dès que le texte est prêt.")
             }
         }
         .formStyle(.grouped)
     }
 
+    private static var supportsDucking: Bool {
+        ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 14, minorVersion: 0, patchVersion: 0))
+    }
+
+    private var recordingChoices: [Int] {
+        let current = Config.effectiveMaxRecordings(settings.config.maxRecordings)
+        let choices = [0, 5, 10, 25, 50, 100]
+        return choices.contains(current) ? choices : (choices + [current]).sorted()
+    }
+
+    // MARK: - Raccourci
+
+    private var controlsPage: some View {
+        Form {
+            Section {
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        if settings.isCapturingShortcut {
+                            Text("Appuyez sur une touche…")
+                                .foregroundStyle(.secondary)
+                            Button("Annuler") { settings.cancelShortcutCapture() }
+                        } else {
+                            KeyCap(hotkey)
+                            Button("Modifier…") { settings.startShortcutCapture() }
+                        }
+                    }
+                } label: {
+                    Text("Touche de dictée")
+                    Text("Ex. Fn seule, ⌥ droite ou ⌃⌥Espace.")
+                }
+                if settings.config.hotkeys.contains(where: { $0.keyCode == 63 }) {
+                    LabeledContent {
+                        Button("Ouvrir Clavier…") { settings.openKeyboardSettings() }
+                    } label: {
+                        Text("Si Fn ouvre les emoji")
+                        Text("Dans Réglages Système → Clavier, réglez « Appuyer sur 🌐 pour » sur « Ne rien faire ».")
+                    }
+                }
+            } header: {
+                Text("Raccourci de dictée")
+            } footer: {
+                Text("Une touche de modification seule, comme Fn ou ⌥ droite, fonctionne bien : elle ne gêne pas la saisie. Échap annule la modification.")
+            }
+
+            Section {
+                ChoiceRow(title: "Maintenir pour dicter",
+                          detail: "L'écoute dure tant que la touche est enfoncée. Idéal pour les phrases courtes.",
+                          trailing: nil, selected: !toggleMode) {
+                    settings.change { $0.toggleMode = FlexBool(false) }
+                }
+                ChoiceRow(title: "Appuyer pour démarrer / arrêter",
+                          detail: "Un appui démarre, un second appui termine. Pratique pour les longues dictées.",
+                          trailing: nil, selected: toggleMode) {
+                    settings.change { $0.toggleMode = FlexBool(true) }
+                }
+            } header: {
+                Text("Mode du raccourci")
+            }
+            .disabled(settings.isRecording)
+        }
+        .formStyle(.grouped)
+    }
+
+    // MARK: - Avancé
+
     private var advancedPage: some View {
         Form {
             Section {
-                Button { settings.openConfiguration() } label: {
-                    settingLabel("Ouvrir le fichier de configuration…", symbol: "doc.text")
+                LabeledContent {
+                    HStack {
+                        Button("Ouvrir") { settings.openConfiguration() }
+                        Button("Afficher") { settings.revealConfiguration() }
+                    }
+                } label: {
+                    Text("Modifier le fichier")
+                    Text("Pour les options absentes de cette fenêtre, comme plusieurs raccourcis.")
                 }
-                Button { settings.revealConfiguration() } label: {
-                    settingLabel("Afficher le fichier dans le Finder", symbol: "folder")
-                }
-                Button { settings.reloadConfiguration() } label: {
-                    settingLabel("Recharger la configuration", symbol: "arrow.clockwise")
+                LabeledContent {
+                    Button("Recharger") { settings.reloadConfiguration() }
+                } label: {
+                    Text("Recharger la configuration")
+                    Text("Applique les modifications faites dans le fichier.")
                 }
             } header: {
-                sectionHeading("Configuration", symbol: "doc.text")
+                Text("Fichier de configuration")
             } footer: {
                 Text(Config.configFile.path)
                     .textSelection(.enabled)
             }
 
             Section {
-                Button(role: .destructive) {
-                    settings.resetDefaults()
+                LabeledContent {
+                    Button("Rétablir…", role: .destructive) { settings.resetDefaults() }
                 } label: {
-                    settingLabel("Rétablir les réglages par défaut", symbol: "arrow.counterclockwise")
+                    Text("Réglages par défaut")
+                    Text("Les modèles téléchargés et les enregistrements sont conservés.")
                 }
             } header: {
-                sectionHeading("Réinitialisation", symbol: "arrow.counterclockwise")
-            } footer: {
-                Text("Rétablit les réglages initiaux après confirmation. Les modèles téléchargés restent sur ce Mac.")
+                Text("Réinitialisation")
             }
         }
         .formStyle(.grouped)
     }
 
+    // MARK: - À propos
+
     private var aboutPage: some View {
         Form {
             Section {
-                HStack(spacing: 18) {
+                HStack(spacing: 16) {
                     Image(nsImage: NSApplication.shared.applicationIconImage)
                         .resizable()
                         .interpolation(.high)
-                        .frame(width: 70, height: 70)
-                    VStack(alignment: .leading, spacing: 5) {
+                        .frame(width: 64, height: 64)
+                    VStack(alignment: .leading, spacing: 3) {
                         Text("Local-Echo").font(.title2.weight(.semibold))
                         Text("Dictée vocale locale pour macOS")
                             .foregroundStyle(.secondary)
@@ -760,36 +853,205 @@ private struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, 6)
             }
 
-            Section {
-                infoRow("Version", value: LocalEcho.version, symbol: "number")
-                infoRow("Compatibilité", value: "Apple Silicon · macOS 13 ou ultérieur",
-                        symbol: "desktopcomputer")
-                infoRow("Licence", value: "MIT", symbol: "doc.text")
-            } header: {
-                sectionHeading("L'application", symbol: "info.circle.fill")
-            } footer: {
-                Text("La transcription et le nettoyage du texte s'exécutent localement. Aucun compte n'est nécessaire.")
-            }
-
-            Section {
-                Button {
-                    if let url = URL(string: "https://github.com/NatanSlvdr/local-echo") {
-                        NSWorkspace.shared.open(url)
+            Section("Confidentialité") {
+                HStack(spacing: 12) {
+                    IconBadge(symbol: "lock.fill", color: .blue, size: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Tout reste sur ce Mac")
+                        Text("L'audio et le texte ne quittent jamais votre ordinateur. Aucun compte n'est nécessaire.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                } label: {
-                    settingLabel("Voir le code source", symbol: "chevron.left.forwardslash.chevron.right")
                 }
-            } header: {
-                sectionHeading("Projet", symbol: "link")
+            }
+
+            Section("L'application") {
+                LabeledContent("Version", value: LocalEcho.version)
+                LabeledContent("Compatibilité", value: "Mac Apple Silicon · macOS 13 ou ultérieur")
+                LabeledContent("Licence", value: "MIT")
+                LabeledContent("Code source") {
+                    Button("Ouvrir sur GitHub") {
+                        if let url = URL(string: "https://github.com/NatanSlvdr/local-echo") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
             }
         }
         .formStyle(.grouped)
     }
+}
 
-    private var selectedSpeechModel: ModelCatalog.Model? {
-        ModelCatalog.speechModel(settings.config.modelSize)
+// MARK: - Components
+
+/// A white symbol on a colored rounded square, as in the System Settings sidebar.
+private struct IconBadge: View {
+    let symbol: String
+    let color: Color
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.55, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(color.gradient, in: RoundedRectangle(cornerRadius: size * 0.26, style: .continuous))
+    }
+}
+
+/// Shows a shortcut the way macOS draws keys in settings.
+private struct KeyCap: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(.tertiary, lineWidth: 0.5))
+            .accessibilityLabel("Raccourci \(text)")
+    }
+}
+
+/// One option in a labeled group; the chosen one carries a checkmark, like the menu.
+private struct ChoiceRow: View {
+    let title: String
+    let detail: String?
+    let trailing: String?
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                    if let detail {
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 12)
+                if let trailing {
+                    Text(trailing)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Image(systemName: "checkmark")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.tint)
+                    .opacity(selected ? 1 : 0)
+                    .frame(width: 16)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// "What you say" and "what you get", so a setting's effect is visible before trying it.
+private struct ExampleView: View {
+    let said: String
+    let result: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            line("Vous dites", Text("« \(said) »").italic().foregroundStyle(.secondary))
+            line("Résultat", Text(result))
+        }
+        .font(.callout)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func line(_ label: String, _ text: some View) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .frame(width: 76, alignment: .leading)
+            text
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct StepRow: View {
+    let number: Int
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text("\(number)")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22)
+                .background(Color.accentColor, in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct PermissionRow: View {
+    let title: String
+    let detail: String
+    let granted: Bool
+    let open: () -> Void
+
+    var body: some View {
+        LabeledContent {
+            if granted {
+                Label("Autorisé", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else {
+                Button("Autoriser…", action: open)
+            }
+        } label: {
+            Text(title)
+            Text(detail)
+        }
+    }
+}
+
+/// A row that shows the current value and opens the page where it can be changed.
+private struct NavigationRow: View {
+    let title: String
+    let value: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(value)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -31,7 +31,7 @@ A waveform icon appears in your menu bar when it's running.
 
 The default hotkey is the **Globe key** (🌐, bottom-left). Hold it, speak, release.
 
-On macOS 14 and later, Local-Echo can lower the system output volume while recording. Use **Baisser le son pendant la dictée** in the menu bar to turn this on or off. The original output volume is restored after recording. Microphone capture always uses the standard audio engine.
+On macOS 14 and later, Local-Echo can lower the system output volume while recording. Use **Audio → Baisser le son des autres apps** in the menu bar or the **Audio** settings page to turn this on or off. The original output volume is restored after recording. Microphone capture always uses the standard audio engine.
 
 > **[Setup and permissions guide](docs/install-guide.md)** — permission walkthrough, non-English macOS instructions, and troubleshooting.
 
@@ -99,7 +99,7 @@ If the Globe key opens the emoji picker: **System Settings → Keyboard → "Pre
 Click the waveform icon to open a native macOS menu. The header shows the current state with a colored status badge, what to press next, and a progress bar while a model downloads. When a permission is missing, a button opens the right pane of System Settings.
 
 - **Dernière dictée** — **Copier la dernière dictée** (⌘C) shows a preview of your most recent transcription and copies it, which helps if you dictated without a text field focused. When recordings are kept, **Enregistrements récents** lists them with their age and length; click one to re-transcribe it and copy the result.
-- **Réglages rapides** — switch the speech model (with download size and status), the microphone, text cleanup and its formatting level, the shortcut mode, and whether other audio is lowered while recording, without opening the settings window.
+- **Réglages rapides** — switch the speech model (with download size and status), the microphone and audio lowering, text cleanup and its formatting level, and the shortcut mode without opening the settings window.
 
 | State | Icon |
 |---|---|
@@ -109,7 +109,7 @@ Click the waveform icon to open a native macOS menu. The header shows the curren
 | Downloading model | Progress ring |
 | Waiting for permission | Lock |
 
-Choose **Réglages…** (⌘,) to open the native settings window. **Général** shows the current choices and useful dictation tips. **Transcription** groups the four supported models by download size; each selectable row shows the model name, weight, and download status. **Nettoyage du texte** has the same simple selector and an on/off switch, plus a formatting level (none, light, polished, or structured) and separate switches for obvious recognition errors and for fillers and repetitions. In **Contrôles**, click the shortcut and press a key or key combination, then choose whether to hold it or press it to start and stop. **Avancé** opens or reveals the configuration file and can restore default settings after confirmation. The settings sidebar stays visible.
+Choose **Réglages…** (⌘,) to open the settings window, laid out like System Settings. **Général** explains how to dictate in three steps, shows whether the Microphone and Accessibility permissions are granted (with a button to fix them), and summarizes the current choices with links to each page. **Transcription** lists the four models from lightest to heaviest with a one-line description each, flags models that still need downloading, and shows a spoken-punctuation example. **Nettoyage du texte** has an on/off switch, the four formatting levels with a "what you say / what you get" example for the selected one, and switches for obvious-error correction and filler removal. **Audio** picks the microphone, lowers other audio during dictation, and sets how many recordings to keep for re-transcription. **Raccourci** records a new shortcut, explains the Globe-key emoji setting when Fn is used, and chooses between holding and pressing. **Avancé** opens, reveals, or reloads the configuration file and can restore default settings after confirmation.
 
 ## Compare
 

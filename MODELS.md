@@ -1,8 +1,8 @@
 # Models
 
-Local-Echo offers four speech models. Choose one in **Options → Transcription** or with `local-echo set-model <id>`. The selected model downloads on first use. Each loaded model stays in memory for 15 minutes after its last use, then unloads automatically.
+Local-Echo offers four speech models. Choose one in **Réglages… → Transcription**, from the **Modèle** submenu in the menu bar, or with `local-echo set-model <id>`. The selected model downloads on first use. Each loaded model stays in memory for 15 minutes after its last use, then unloads automatically.
 
-The settings window groups them by approximate download size: **lightweight** (under 1 GB), **medium** (1–1.5 GB), and **heavy** (over 1.5 GB). Each selectable row shows its name, size, and whether it is already downloaded.
+The settings window and menu list them from lightest to heaviest. A model that is not downloaded yet shows its download size, so you know what choosing it will fetch.
 
 | Choice | ID | Download | Reference speed | Notes |
 |---|---|---:|---:|---|
@@ -13,7 +13,7 @@ The settings window groups them by approximate download size: **lightweight** (u
 
 Speed figures are model publisher benchmarks, not guarantees for this app or your Mac. The Parakeet figure excludes model loading. The Qwen models and Parakeet run on Apple Silicon through an isolated Python MLX environment. The app installs that environment on first use using bundled `uv`. Turbo uses a persistent local `whisper-server`. Audio and transcript processing stay on your Mac.
 
-The cleanup stage runs after transcription and spoken punctuation processing. Its only model is [`qwen35-08b-qat-q4`](https://huggingface.co/YoozLabs/Qwen3.5-0.8B-qat-lean-4bit-mlx), a ~500 MB Qwen3.5 0.8B QAT Q4 model. Cleanup is enabled by default and can be switched off in **Options → Nettoyage du texte** or with `local-echo set-cleanup off`. By default it corrects punctuation, capitalization, spacing, and obvious recognition errors while aiming to preserve meaning. Generated edits can still be wrong, so check important dictation.
+The cleanup stage runs after transcription and spoken punctuation processing. Its only model is [`qwen35-08b-qat-q4`](https://huggingface.co/YoozLabs/Qwen3.5-0.8B-qat-lean-4bit-mlx), a ~500 MB Qwen3.5 0.8B QAT Q4 model. Cleanup is enabled by default and can be switched off in **Réglages… → Nettoyage du texte** or with `local-echo set-cleanup off`. By default it corrects punctuation, capitalization, spacing, and obvious recognition errors while aiming to preserve meaning. Generated edits can still be wrong, so check important dictation.
 
 Cleanup defaults to light formatting and obvious-error correction, with filler removal off. The formatting level can be set to none, light punctuation and capitalization, polished paragraphs, or structured paragraphs and lists when the speaker clearly enumerates items. The separate spoken-punctuation option in Transcription runs before cleanup.
 
