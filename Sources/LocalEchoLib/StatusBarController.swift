@@ -218,6 +218,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
         } else {
             submenu.addItem(sectionHeader("Retranscrire et copier"))
             let canReprocess = isIdle
+            let listed = Set(recordings.map(\.url.path))
+            Self.durations = Self.durations.filter { listed.contains($0.key) }
             for recording in recordings {
                 let title = Self.relativeDateFormatter.localizedString(for: recording.date, relativeTo: Date())
                 let item = actionItem(title.prefix(1).uppercased() + title.dropFirst()) { [weak self] in
@@ -514,10 +516,19 @@ class StatusBarController: NSObject, NSMenuDelegate {
         return "« \(singleLine.prefix(60).trimmingCharacters(in: .whitespaces))… »"
     }
 
+    /// Durations by file path, with the file size they were read at, so the menu opens without reading every file again.
+    private static var durations: [String: (size: Int, duration: String?)] = [:]
+
     private static func duration(of url: URL) -> String? {
-        guard let file = try? AVAudioFile(forReading: url), file.fileFormat.sampleRate > 0 else { return nil }
-        let seconds = Int((Double(file.length) / file.fileFormat.sampleRate).rounded())
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+        if let cached = durations[url.path], cached.size == size { return cached.duration }
+        var duration: String?
+        if let file = try? AVAudioFile(forReading: url), file.fileFormat.sampleRate > 0 {
+            let seconds = Int((Double(file.length) / file.fileFormat.sampleRate).rounded())
+            duration = String(format: "%d:%02d", seconds / 60, seconds % 60)
+        }
+        durations[url.path] = (size, duration)
+        return duration
     }
 
     private static let menuLocale = Locale(identifier: "fr_FR")

@@ -9,6 +9,7 @@ public final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unche
     private var completion: ((Error?) -> Void)?
     private var destPath: URL?
     private var expectedSHA256: String?
+    private var lastReportedPercent = -1
 
     public static func download(_ model: ModelCatalog.Model, onProgress: ((Double) -> Void)? = nil) throws {
         downloadLock.lock()
@@ -133,6 +134,9 @@ public final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unche
     public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard totalBytesExpectedToWrite > 0 else { return }
         let percent = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) * 100.0
+        // This callback runs for every received chunk; the menu only shows whole percents.
+        guard Int(percent) != lastReportedPercent else { return }
+        lastReportedPercent = Int(percent)
         onProgress?(percent)
     }
 
